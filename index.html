@@ -54,6 +54,7 @@
   .week-group{margin-bottom:22px;}
   .week-title{font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;margin:0 0 10px 4px;text-transform:uppercase;letter-spacing:.04em;}
   .week-title::after{content:"";flex:1;height:1px;background:var(--line);}
+  .week-delete-btn{border:none;background:none;color:var(--danger);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;text-transform:none;letter-spacing:normal;white-space:nowrap;}
 
   .date-card,.event-card{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;}
   .date-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;cursor:pointer;user-select:none;flex-wrap:wrap;gap:8px;}
@@ -151,6 +152,10 @@
   .outside-amount{width:70px;font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:13px;text-align:right;}
   .outside-remove{margin-left:auto;border:none;background:var(--danger-bg);color:var(--danger);width:18px;height:18px;border-radius:50%;font-size:11px;cursor:pointer;flex-shrink:0;}
   .outside-total{font-size:13px;font-weight:700;color:var(--outside);margin-top:4px;}
+  .paid-check{display:flex;align-items:center;margin-right:2px;flex-shrink:0;}
+  .paid-check input{width:17px;height:17px;cursor:pointer;accent-color:var(--mine);}
+  .outside-row.paid{background:#EAF6EC;}
+  .paid-tag{color:var(--mine);font-weight:700;}
   .event-delete{padding:8px 16px 14px;text-align:right;}
   .qty-item{display:flex;align-items:center;gap:5px;background:var(--paper-soft);border-radius:7px;padding:3px 3px 3px 8px;}
   .qty-item-name{font-size:11.5px;color:var(--ink-soft);}
@@ -620,6 +625,22 @@ async function deleteDate(dateStr){
   await batch.commit();
   showToast('已刪除');
 }
+async function deleteWeek(wk){
+  const dates = Object.keys(entries).filter(d=>weekKey(d)===wk).sort();
+  if(dates.length===0) return;
+  const ok=await showConfirm('確定要刪除「'+weekLabel(wk)+'」整週（共 '+dates.length+' 天）的紀錄嗎？此動作無法復原。');
+  if(!ok) return;
+  const batch=writeBatch(db);
+  for(const date of dates){
+    const lunchSnap=await getDocs(collection(db,'entries',date,'lunch_choice'));
+    const dinnerSnap=await getDocs(collection(db,'entries',date,'dinner_choice'));
+    lunchSnap.forEach(d=>batch.delete(d.ref));
+    dinnerSnap.forEach(d=>batch.delete(d.ref));
+    batch.delete(doc(db,'entries',date));
+  }
+  await batch.commit();
+  showToast('已刪除整週紀錄');
+}
 async function touchEntry(date){
   await setDoc(doc(db,'entries',date), {lastEditBy:identity(), lastEditAt:new Date().toISOString()}, {merge:true});
 }
@@ -712,8 +733,9 @@ async function setItemQty(eventId, label, itemId, val){
   await setDoc(doc(db,'events',eventId,'orders',label), {
     studentId: existing ? (existing.studentId||label) : label,
     name: existing ? (existing.name||label) : label,
+    paid: existing ? !!existing.paid : false,
     items, eventId, updatedBy:identity(), updatedAt:new Date().toISOString()
-  });
+  }, {merge:true});
 }
 async function removeParticipant(eventId, orderId){
   await deleteDoc(doc(db,'events',eventId,'orders',orderId));
@@ -787,7 +809,8 @@ function renderMealTab(){
   let html=addBarHtml+noteHtml;
   weekKeys.forEach(wk=>{
     const ds=weeks[wk].sort((a,b)=>a.localeCompare(b));
-    html += '<div class="week-group" data-week="'+wk+'"><div class="week-title">'+weekLabel(wk)+'</div>';
+    const weekDeleteBtn = role==='staff' ? `<button class="week-delete-btn" data-action="delete-week" data-week="${wk}">刪除整週</button>` : '';
+    html += '<div class="week-group" data-week="'+wk+'"><div class="week-title">'+weekLabel(wk)+weekDeleteBtn+'</div>';
     ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
     html += '</div>';
   });
@@ -924,6 +947,10 @@ function renderStaffEventCard(ev){
   const orders = eventOrders[ev.id]||[];
   const roster=rosterLabels();
   const total=eventTotal(ev);
+  const paidOrders = orders.filter(o=>o.paid);
+  const paidCount = paidOrders.length;
+  const unpaidCount = orders.length - paidCount;
+  const paidTotal = paidOrders.reduce((s,o)=>s+orderTotal(o, menu),0);
 
   const menuChips = menu.map(mi=>`<span class="name-chip">${escapeHtml(mi.name)} · NT$${mi.price}<button data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}">×</button></span>`).join('');
 
@@ -932,19 +959,22 @@ function renderStaffEventCard(ev){
 
   const rosterRows = rosterOrders.map(o=>{
     const sub=orderTotal(o, menu);
+    const paid=!!o.paid;
     const itemList = menu.filter(mi=>(o.items&&o.items[mi.id])>0).map(mi=>escapeHtml(mi.name)+'×'+o.items[mi.id]).join('、') || '（尚未選擇品項）';
-    return `<div class="outside-row"><span class="outside-name">${escapeHtml(o.name||o.id)}</span><span style="flex:1;font-size:12.5px;color:var(--ink-soft);">${itemList}</span><span class="outside-currency">NT$${sub}</span></div>`;
+    return `<div class="outside-row ${paid?'paid':''}"><label class="paid-check" title="已繳款"><input type="checkbox" data-action="toggle-paid" data-event="${ev.id}" data-id="${o.id}" ${paid?'checked':''}></label><span class="outside-name">${escapeHtml(o.name||o.id)}</span><span style="flex:1;font-size:12.5px;color:var(--ink-soft);">${itemList}</span><span class="outside-currency">NT$${sub}</span></div>`;
   }).join('');
 
   const customRows = customOrders.map(o=>{
     const sub = orderTotal(o, menu);
+    const paid=!!o.paid;
     const itemInputs = menu.map(mi=>`
       <span class="qty-item">
         <span class="qty-item-name">${escapeHtml(mi.name)}</span>
         <input type="number" min="0" class="qty-input" value="${(o.items&&o.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${o.id}" data-item="${mi.id}">
       </span>`).join('');
     return `
-    <div class="outside-row" style="align-items:flex-start;flex-wrap:wrap;">
+    <div class="outside-row ${paid?'paid':''}" style="align-items:flex-start;flex-wrap:wrap;">
+      <label class="paid-check" title="已繳款" style="padding-top:4px;"><input type="checkbox" data-action="toggle-paid" data-event="${ev.id}" data-id="${o.id}" ${paid?'checked':''}></label>
       <span class="outside-name" style="padding-top:4px;">${escapeHtml(o.name||o.id)}</span>
       <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;">${itemInputs || '<span class="other-label">尚未新增菜單選項</span>'}</div>
       <span class="outside-currency" style="padding-top:4px;">NT$${sub}</span>
@@ -973,7 +1003,7 @@ function renderStaffEventCard(ev){
       <div class="section-label" style="margin-top:12px;">其他訂購人（非座號名單，可在此手動設定數量）</div>
       ${customOrders.length ? `<div class="outside-list">${customRows}</div>` : ''}
       <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="event-name-input" data-event="${ev.id}"><button data-action="add-event-name" data-event="${ev.id}">新增</button></div>
-      <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}</div>
+      <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}・<span class="paid-tag">已繳款 ${paidCount} 人（NT$ ${paidTotal}）</span>${unpaidCount?`・尚未繳款 ${unpaidCount} 人`:''}</div>
     </div>
     <div class="event-delete"><button class="date-delete" data-action="delete-event" data-event="${ev.id}">刪除此活動</button></div>
   </div>`;
@@ -1001,7 +1031,7 @@ function renderStudentEventCard(ev){
       ${menu.length ? `
         <div class="section-label" style="margin-top:8px;">選擇品項與數量（可重複訂購）</div>
         <div class="outside-list">${itemRows}</div>
-        <div class="outside-total">我的金額：NT$ ${mySub}</div>
+        <div class="outside-total">我的金額：NT$ ${mySub}${mine.paid?'　<span class="paid-tag">✓ 伙委已確認收款</span>':''}</div>
       ` : `<div class="other-label">伙委尚未設定菜單選項</div>`}
     </div>
   </div>`;
@@ -1079,6 +1109,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     render();
   }
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
+  else if(action==='delete-week'){ ev.stopPropagation(); await deleteWeek(el.dataset.week); }
   else if(action==='copy-last-week'){ ev.stopPropagation(); await applyLastWeekTo(date); }
   else if(action==='add-name'){
     const input=document.querySelector(`input[data-action="name-input"][data-date="${date}"][data-meal="${meal}"]`);
@@ -1173,6 +1204,11 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
   }
   else if(ev.target.dataset.action==='item-qty'){
     await setItemQty(ev.target.dataset.event, ev.target.dataset.label, ev.target.dataset.item, ev.target.value);
+  }
+  else if(ev.target.dataset.action==='toggle-paid'){
+    await updateDoc(doc(db,'events',ev.target.dataset.event,'orders',ev.target.dataset.id), {
+      paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString()
+    });
   }
   else if(ev.target.matches('input[type=file]')){
     const key=ev.target.dataset.fileFor; const parts=key.split('-'); const meal=parts.pop(); const date=parts.join('-');
