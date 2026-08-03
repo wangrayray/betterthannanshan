@@ -69,7 +69,9 @@
   .date-card.collapsed .date-body,.date-card.collapsed .date-foot{display:none;}
   @media (max-width:640px){.date-body{grid-template-columns:1fr;}}
 
-  .fill-status{border-radius:12px;padding:12px;background:var(--paper-soft);margin-top:2px;}
+  .date-note{margin-top:2px;}
+  .date-note .note-label{font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;}
+  .date-note-input{width:100%;min-height:48px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;background:#fff;resize:vertical;}
   .meal-card{border-radius:12px;padding:12px;}
   .meal-card.lunch{background:var(--lunch-bg);}
   .meal-card.dinner{background:var(--dinner-bg);}
@@ -951,43 +953,6 @@ function renderMealTab(){
   content.innerHTML = html;
 }
 
-// 記錄「這一天」全班誰已經填過退餐單（只要午餐或晚餐其中一個有填就算填過），
-// 給伙委一眼看出還有誰沒填，不用分別點開午餐/晚餐兩張卡片比對。
-function computeDailyFillStatus(lC, dC){
-  const roster=rosterLabels();
-  const filled=[], notFilled=[];
-  roster.forEach(lab=>{
-    const lunch=lC.find(c=>c.id===lab);
-    const dinner=dC.find(c=>c.id===lab);
-    if(lunch||dinner){
-      const times=[lunch&&lunch.updatedAt, dinner&&dinner.updatedAt].filter(Boolean).sort().reverse();
-      filled.push({
-        label:lab, lastAt: times[0]||'',
-        lunch: lunch?(STATUS_LABEL[lunch.status]||''):'',
-        dinner: dinner?(STATUS_LABEL[dinner.status]||''):''
-      });
-    } else {
-      notFilled.push(lab);
-    }
-  });
-  filled.sort((a,b)=>(b.lastAt||'').localeCompare(a.lastAt||''));
-  return {filled, notFilled, total:roster.length};
-}
-function renderDailyFillStatus(lC, dC){
-  const {filled, notFilled, total} = computeDailyFillStatus(lC, dC);
-  const chips = filled.map(f=>{
-    const parts=[f.lunch?'午'+f.lunch:'', f.dinner?'晚'+f.dinner:''].filter(Boolean).join('／');
-    const title=parts + (f.lastAt?'・'+fmtTime(f.lastAt):'');
-    return `<span class="name-chip" title="${escapeHtml(title)}">${escapeHtml(f.label)}${f.lastAt?'・'+fmtTime(f.lastAt):''}</span>`;
-  }).join('');
-  return `
-  <div class="fill-status">
-    <div class="section-label"><b>今日填寫狀況</b>：已填 <b>${filled.length}</b>／${total} 人${notFilled.length?'・尚未填 '+notFilled.length+' 人':'（全員已填）'}</div>
-    ${filled.length?`<div class="chips">${chips}</div>`:''}
-    ${notFilled.length?`<div class="pending-note" style="margin-top:6px;">尚未填寫：${notFilled.map(escapeHtml).join('、')}</div>`:''}
-  </div>`;
-}
-
 function renderStaffDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
   const lC=lunchChoice[date]||[], dC=dinnerChoice[date]||[];
@@ -1000,7 +965,10 @@ function renderStaffDateCard(date){
     <div class="date-body">
       ${renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lC)}
       ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
-      <div style="grid-column:1 / -1;">${renderDailyFillStatus(lC, dC)}</div>
+      <div class="date-note" style="grid-column:1 / -1;">
+        <label class="note-label">備註（伙委內部使用）</label>
+        <textarea class="date-note-input" data-action="date-note" data-date="${date}" placeholder="輸入這一天的備註，例如：05 號請假、43 號晚餐加訂...">${escapeHtml(e.note||'')}</textarea>
+      </div>
     </div>
     <div class="date-foot">
       <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button><button class="copy-last-btn" data-action="copy-prev-day" data-date="${date}">跟前一天一樣</button><button class="copy-last-btn" data-action="copy-last-week" data-date="${date}">套用上週同星期</button></div>
@@ -1440,7 +1408,12 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
 
 document.getElementById('content').addEventListener('change', async (ev)=>{
   try{
-  if(ev.target.dataset.action==='item-qty'){
+  if(ev.target.dataset.action==='date-note'){
+    const date=ev.target.dataset.date;
+    await setDoc(doc(db,'entries',date), {note: ev.target.value, lastEditBy:identity(), lastEditAt:new Date().toISOString()}, {merge:true});
+    showToast('備註已儲存');
+  }
+  else if(ev.target.dataset.action==='item-qty'){
     await setItemQty(ev.target.dataset.event, ev.target.dataset.label, ev.target.dataset.item, ev.target.value);
   }
   else if(ev.target.dataset.action==='toggle-paid'){
