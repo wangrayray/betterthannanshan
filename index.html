@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>班務系統｜退餐與外食訂購</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EDF0E6; --paper:#FFFFFF; --paper-soft:#F6F7F1;
+    --ink:#232B24; --ink-soft:#5B655C; --line:#DDE2D6;
+    --lunch:#C97B3D; --lunch-bg:#FBF0E3;
+    --dinner:#35586A; --dinner-bg:#E7EEF1;
+    --danger:#B4453B; --danger-bg:#F7E7E5;
+    --mine:#2E7D46; --outside:#6B4FA0; --outside-bg:#F0EBF7;
+    --radius:16px; --shadow:0 1px 2px rgba(35,43,36,.06),0 6px 20px rgba(35,43,36,.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--ink);font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'PingFang TC','Microsoft JhengHei',sans-serif;min-height:100vh;padding:20px 16px 80px;}
+  .wrap{max-width:880px;margin:0 auto;}
+
+  .header{display:flex;align-items:center;gap:14px;margin-bottom:14px;}
+  .logo{width:40px;height:40px;flex-shrink:0;}
+  .header h1{font-family:'Zen Maru Gothic',sans-serif;font-weight:900;font-size:20px;margin:0;}
+  .header p{margin:2px 0 0;font-size:12px;color:var(--ink-soft);}
+
+  .id-bar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-soft);margin-bottom:14px;flex-wrap:wrap;}
+  .id-bar b{color:var(--ink);}
+  .id-bar button{border:none;background:none;color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:12px;padding:0;}
+  .gear-btn{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--paper);cursor:pointer;font-size:14px;margin-left:auto;}
+
+  .tab-bar{display:flex;gap:8px;margin-bottom:18px;}
+  .tab-btn{flex:1;font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:14px;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);cursor:pointer;}
+  .tab-btn.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+
+  .add-bar{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;display:flex;gap:10px;align-items:center;margin-bottom:22px;flex-wrap:wrap;}
+  .add-bar label{font-size:13px;color:var(--ink-soft);font-weight:500;white-space:nowrap;}
+  .add-bar input[type=date],.add-bar input[type=text]{font-family:inherit;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:14px;background:var(--paper-soft);color:var(--ink);flex:1;min-width:140px;}
+  .btn{font-family:inherit;border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;transition:transform .08s,opacity .15s;}
+  .btn:active{transform:scale(.96);}
+  .btn-primary{background:var(--ink);color:#fff;}
+  .btn-ghost{background:var(--paper-soft);color:var(--ink);border:1px solid var(--line);}
+  .btn-outside{background:var(--outside);color:#fff;}
+  .btn:hover{opacity:.85;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+
+  .overview{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:18px;display:flex;gap:22px;flex-wrap:wrap;}
+  .overview .stat{display:flex;flex-direction:column;}
+  .overview .stat .num{font-family:'Zen Maru Gothic',sans-serif;font-weight:900;font-size:19px;color:var(--outside);}
+  .overview .stat .lab{font-size:11px;color:var(--ink-soft);}
+
+  .week-group{margin-bottom:22px;}
+  .week-title{font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;margin:0 0 10px 4px;text-transform:uppercase;letter-spacing:.04em;}
+  .week-title::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  .date-card,.event-card{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;}
+  .date-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;cursor:pointer;user-select:none;flex-wrap:wrap;gap:8px;}
+  .date-head-left{display:flex;align-items:baseline;gap:8px;}
+  .date-num{font-family:'Zen Maru Gothic',sans-serif;font-weight:900;font-size:17px;}
+  .date-wd{font-size:12.5px;color:var(--ink-soft);}
+  .date-head-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .chip-summary{font-size:11.5px;color:var(--ink-soft);background:var(--paper-soft);padding:4px 9px;border-radius:20px;}
+  .caret{width:9px;height:9px;border-right:2px solid var(--ink-soft);border-bottom:2px solid var(--ink-soft);transform:rotate(45deg);transition:transform .2s;margin-right:2px;}
+  .date-card.collapsed .caret{transform:rotate(-45deg);}
+  .date-body{padding:0 14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .date-card.collapsed .date-body,.date-card.collapsed .date-foot{display:none;}
+  @media (max-width:640px){.date-body{grid-template-columns:1fr;}}
+
+  .meal-card{border-radius:12px;padding:12px;}
+  .meal-card.lunch{background:var(--lunch-bg);}
+  .meal-card.dinner{background:var(--dinner-bg);}
+  .meal-title{font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:6px;margin-bottom:10px;}
+  .meal-card.lunch .meal-title{color:var(--lunch);}
+  .meal-card.dinner .meal-title{color:var(--dinner);}
+  .dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+
+  .field-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .field-row label{font-size:12px;color:var(--ink-soft);white-space:nowrap;}
+  .field-row input[type=number]{width:64px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:14px;text-align:center;background:#fff;}
+  .field-row .static{font-size:14px;font-weight:700;}
+
+  .section-label{font-size:12px;color:var(--ink-soft);margin-bottom:6px;}
+  .section-label b{color:var(--ink);font-size:13px;}
+
+  .number-grid{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;}
+  .number-cell{min-width:28px;height:24px;padding:0 3px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;user-select:none;transition:transform .1s;border:1px solid transparent;}
+  .number-cell:active{transform:scale(.88);}
+  .meal-card.lunch .number-cell.on{background:var(--lunch);color:#fff;}
+  .meal-card.dinner .number-cell.on{background:var(--dinner);color:#fff;}
+  .number-cell.off{background:#fff;color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
+  .number-cell.mine{box-shadow:0 0 0 2px var(--mine);}
+  .number-cell.outside-cell{background:#fff;color:var(--ink-soft);border:1px dashed var(--line);}
+  .number-cell.outside-cell.active{background:var(--outside);color:#fff;border-color:var(--outside);}
+
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+  .name-chip{display:flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 6px 4px 10px;font-size:12.5px;}
+  .name-chip button{border:none;background:var(--danger-bg);color:var(--danger);width:16px;height:16px;border-radius:50%;font-size:11px;cursor:pointer;}
+  .add-name-row{display:flex;gap:6px;margin-bottom:10px;}
+  .add-name-row input[type=text]{flex:1;min-width:0;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px;background:#fff;}
+  .add-name-row button{border:none;border-radius:8px;background:var(--ink);color:#fff;font-size:12.5px;font-weight:700;padding:0 12px;cursor:pointer;}
+  .other-label{font-size:11px;color:var(--ink-soft);margin:2px 0 4px;}
+
+  .own-toggle{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+  .own-toggle .lab{font-size:13px;font-weight:700;}
+  .switch{position:relative;width:46px;height:26px;border-radius:20px;background:var(--line);cursor:pointer;flex-shrink:0;}
+  .switch.on{background:var(--danger);}
+  .switch .knob{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;transition:left .15s;}
+  .switch.on .knob{left:22px;}
+  .own-toggle .state-label{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+
+  .shot-zone{border:1.5px dashed var(--line);border-radius:10px;background:rgba(255,255,255,.5);padding:8px;text-align:center;font-size:11.5px;color:var(--ink-soft);cursor:pointer;outline:none;margin-top:10px;}
+  .shot-zone img{width:100%;max-height:120px;object-fit:cover;border-radius:7px;display:block;margin-bottom:6px;}
+  .shot-actions{display:flex;gap:6px;justify-content:center;margin-top:4px;}
+  .shot-actions span{font-size:11px;text-decoration:underline;cursor:pointer;color:var(--ink-soft);}
+  .shot-actions span.danger{color:var(--danger);}
+
+  .date-foot{padding:0 16px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+  .date-delete{border:none;background:none;color:var(--ink-soft);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;}
+  .edit-tag{font-size:10.5px;color:var(--ink-soft);}
+  .copy-last-btn{background:var(--paper-soft);color:var(--ink-soft);font-size:11px;cursor:pointer;padding:4px 9px;border-radius:20px;border:1px solid var(--line);margin-left:8px;}
+
+  .event-head{padding:14px 16px;border-bottom:1px solid var(--line);}
+  .event-head h3{margin:0 0 3px;font-family:'Zen Maru Gothic',sans-serif;font-size:15px;}
+  .event-meta{font-size:11.5px;color:var(--ink-soft);display:flex;gap:10px;flex-wrap:wrap;}
+  .event-body{padding:14px 16px;background:var(--outside-bg);}
+  .outside-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;}
+  .outside-row{display:flex;align-items:center;gap:6px;background:#fff;border-radius:8px;padding:5px 8px;}
+  .outside-name{font-size:12.5px;font-weight:700;width:40px;flex-shrink:0;}
+  .outside-currency{font-size:11.5px;color:var(--ink-soft);}
+  .outside-amount{width:70px;font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:13px;text-align:right;}
+  .outside-remove{margin-left:auto;border:none;background:var(--danger-bg);color:var(--danger);width:18px;height:18px;border-radius:50%;font-size:11px;cursor:pointer;flex-shrink:0;}
+  .outside-total{font-size:13px;font-weight:700;color:var(--outside);margin-top:4px;}
+  .event-delete{padding:8px 16px 14px;text-align:right;}
+  .qty-item{display:flex;align-items:center;gap:5px;background:var(--paper-soft);border-radius:7px;padding:3px 3px 3px 8px;}
+  .qty-item-name{font-size:11.5px;color:var(--ink-soft);}
+  .qty-input{width:44px;font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:3px 4px;font-size:12.5px;text-align:center;}
+
+  .empty-state{text-align:center;color:var(--ink-soft);font-size:13px;padding:50px 20px;background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(35,43,36,.75);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;overflow-y:auto;}
+  .modal-bg.show{display:flex;}
+  .modal-bg img{max-width:100%;max-height:85vh;border-radius:10px;}
+
+  .panel{background:var(--paper);border-radius:14px;padding:22px;width:100%;max-width:380px;box-shadow:var(--shadow);margin:auto;}
+  .panel h3{margin:0 0 4px;font-family:'Zen Maru Gothic',sans-serif;font-size:17px;}
+  .panel .sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:16px;line-height:1.5;}
+  .panel .row{margin-bottom:14px;}
+  .panel .row label{display:block;font-size:12.5px;color:var(--ink-soft);margin-bottom:5px;}
+  .panel .row input[type=text],.panel .row input[type=number],.panel .row input[type=password]{width:100%;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:14px;}
+  .panel .row.check{display:flex;align-items:center;gap:8px;}
+  .panel .row.check label{margin:0;}
+  .panel .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;}
+  .role-block{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;}
+  .role-block h4{margin:0 0 8px;font-size:14px;font-family:'Zen Maru Gothic',sans-serif;}
+  .role-block .btn{width:100%;margin-top:8px;}
+  .role-block input[type=text],.role-block input[type=password]{width:100%;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:14px;margin-bottom:6px;}
+
+  .confirm-panel{background:var(--paper);border-radius:14px;padding:20px;width:100%;max-width:300px;box-shadow:var(--shadow);text-align:center;margin:auto;}
+  .confirm-panel p{font-size:13.5px;margin:0 0 16px;}
+  .confirm-actions{display:flex;justify-content:center;gap:8px;}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:60;max-width:80vw;text-align:center;}
+  .toast.show{opacity:1;}
+  input[type=file]{display:none;}
+  .pending-note{font-size:11.5px;color:var(--danger);background:var(--danger-bg);border-radius:10px;padding:8px 12px;margin-bottom:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <svg class="logo" viewBox="0 0 48 48" fill="none">
+      <rect x="4" y="14" width="40" height="28" rx="6" fill="#F6F7F1" stroke="#232B24" stroke-width="2"/>
+      <line x1="24" y1="14" x2="24" y2="42" stroke="#DDE2D6" stroke-width="2"/>
+      <circle cx="15" cy="27" r="5" fill="#C97B3D"/>
+      <rect x="30" y="21" width="10" height="12" rx="3" fill="#35586A"/>
+      <path d="M4 14 L24 4 L44 14" stroke="#232B24" stroke-width="2" fill="none" stroke-linejoin="round"/>
+    </svg>
+    <div><h1>班務系統</h1><p>退餐紀錄・外食訂購（Firebase 版）</p></div>
+  </div>
+
+  <div class="id-bar">
+    身份：<b id="who-label">尚未登入</b>
+    <button id="who-change-btn">登出 / 切換帳號</button>
+    <button class="gear-btn" id="gear-btn" title="座號設定（伙委）" style="display:none;">⚙️</button>
+  </div>
+
+  <div class="tab-bar" id="tab-bar" style="display:none;">
+    <button class="tab-btn active" id="tab-meal-btn" data-tab="meal">🍱 退餐紀錄</button>
+    <button class="tab-btn" id="tab-event-btn" data-tab="event">🥡 外食訂購</button>
+  </div>
+
+  <div id="content">
+    <div class="empty-state">請先登入</div>
+  </div>
+
+</div>
+
+<div class="modal-bg" id="modal-bg"><img id="modal-img" src="" alt=""></div>
+
+<div class="modal-bg" id="settings-bg">
+  <div class="panel">
+    <h3>座號設定</h3>
+    <div class="sub">此設定所有伙委共用，用於退餐名單的快速點選格。儲存後會自動同步全班學號名冊（students collection），同學才能用學號登入並寫入自己的資料。</div>
+    <div class="row"><label>班級總座號數（例如 49）</label><input type="number" id="set-roster" min="1" max="99" value="49"></div>
+    <div class="row check"><input type="checkbox" id="set-teacher" checked><label for="set-teacher">包含「師」座位</label></div>
+    <div class="row"><label>新增其他伙委（輸入對方已註冊過的 Email）</label>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="set-staff-email" placeholder="name@example.com" style="flex:1;">
+        <button class="btn btn-ghost" id="add-staff-btn" type="button">新增</button>
+      </div>
+    </div>
+    <div class="actions"><button class="btn btn-ghost" id="settings-cancel">取消</button><button class="btn btn-primary" id="settings-save">儲存</button></div>
+  </div>
+</div>
+
+<div class="modal-bg show" id="role-bg">
+  <div class="panel">
+    <h3>登入</h3>
+    <div class="sub">使用 Firebase 帳號登入。第一次登入時，系統會用你輸入的密碼自動建立新帳號——請務必記住密碼，之後無法在前端重設。</div>
+    <div class="role-block">
+      <h4>👩‍🍳 伙委登入</h4>
+      <div class="sub" style="margin-bottom:8px;">請使用你的個人 Email。首次登入建立帳號後，需請管理員在 Firestore 的 staff collection 新增你的權限才能進入伙委端。</div>
+      <input type="text" id="staff-email-input" placeholder="Email" autocomplete="username">
+      <input type="password" id="staff-pw-input" placeholder="密碼（至少 6 碼）" autocomplete="current-password">
+      <button class="btn btn-primary" id="staff-login-btn">登入 / 註冊</button>
+    </div>
+    <div class="role-block">
+      <h4>🎓 同學登入</h4>
+      <div class="sub" style="margin-bottom:8px;">用你的學號登入，第一次登入會自動建立帳號。</div>
+      <input type="text" id="student-id-input" placeholder="學號" autocomplete="username">
+      <input type="password" id="student-pw-input" placeholder="密碼（至少 6 碼，請牢記）" autocomplete="current-password">
+      <button class="btn btn-outside" id="student-login-btn">登入 / 註冊</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="confirm-bg">
+  <div class="confirm-panel">
+    <p id="confirm-text"></p>
+    <div class="confirm-actions"><button class="btn btn-ghost" id="confirm-no">取消</button><button class="btn btn-primary" id="confirm-yes">確定</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+// ============================================================
+// Firebase 初始化
+// ============================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
+  collection, collectionGroup, getDocs, onSnapshot, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// 你的 Firebase 專案設定（已依你提供的內容填入）
+const firebaseConfig = {
+  apiKey: "AIzaSyCNT06MpgLphDYJutfkSsG3NasyPIoTMaM",
+  authDomain: "betterthannanshan.firebaseapp.com",
+  projectId: "betterthannanshan",
+  storageBucket: "betterthannanshan.firebasestorage.app",
+  messagingSenderId: "294193214137",
+  appId: "1:294193214137:web:336961c505a39b24d36168",
+  measurementId: "G-KHEHPPQJPT"
+};
+
+// 學號登入用的「假網域」，不需要是真實網域，只要跟下方 firestore.rules 邏輯一致即可。
+// 如果要換成別的字串，這裡改掉就好，不用改 rules（rules 只看 @ 前面的學號）。
+const CLASS_DOMAIN = 'yourclass.local';
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ============================================================
+// 狀態
+// ============================================================
+const WD = ['日','一','二','三','四','五','六'];
+let entries = {};      // date -> {date,lunch:{orderCount,screenshot},dinner:{...},lastEditBy,lastEditAt}
+let lunchOff = {};      // date -> [{id,studentId,name,addedBy,addedAt}]
+let dinnerOff = {};     // date -> [...]
+let events = {};        // id -> {id,title,createdAt,createdBy,lastEditBy,lastEditAt}
+let eventMenu = {};     // eventId -> [{id,name,price}]
+let eventOrders = {};   // eventId -> [{id,studentId,name,items,updatedAt}]
+let settings = { rosterSize:49, includeTeacher:true };
+let studentsRoster = {}; // studentId -> {name}
+let staffList = {};      // email -> {name}
+
+let collapsedDates = new Set();
+let role = '';          // 'staff' | 'student' | ''
+let staffName = '';
+let studentId = '';
+let myEmail = '';
+let activeTab = 'meal';
+let confirmResolve = null;
+let unsubs = [];
+
+function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function identity(){ return role==='staff' ? ('伙委'+(staffName?'・'+staffName:'')) : ('學號'+studentId); }
+function parseDate(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+function formatMD(d){ return (d.getMonth()+1)+'/'+d.getDate(); }
+function getMonday(d){ const day=d.getDay(); const diff=day===0?-6:1-day; const mon=new Date(d); mon.setDate(d.getDate()+diff); mon.setHours(0,0,0,0); return mon; }
+function toKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function weekKey(s){ return toKey(getMonday(parseDate(s))); }
+function weekLabel(k){ const mon=parseDate(k); const sun=new Date(mon); sun.setDate(mon.getDate()+6); return formatMD(mon)+'（一）－'+formatMD(sun)+'（日）'; }
+function fmtTime(iso){ if(!iso) return ''; const d=new Date(iso); return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(showToast._tm); showToast._tm=setTimeout(()=>t.classList.remove('show'),2400); }
+function showConfirm(text){ document.getElementById('confirm-text').textContent=text; document.getElementById('confirm-bg').classList.add('show'); return new Promise(r=>{confirmResolve=r;}); }
+document.getElementById('confirm-yes').addEventListener('click',()=>{document.getElementById('confirm-bg').classList.remove('show'); if(confirmResolve) confirmResolve(true);});
+document.getElementById('confirm-no').addEventListener('click',()=>{document.getElementById('confirm-bg').classList.remove('show'); if(confirmResolve) confirmResolve(false);});
+
+function rosterLabels(){
+  const labels=[]; if(settings.includeTeacher) labels.push('師');
+  const n=Math.max(0,Math.min(99,Number(settings.rosterSize)||0));
+  for(let i=1;i<=n;i++) labels.push(String(i).padStart(2,'0'));
+  return labels;
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+function authErrMsg(err){
+  const m={
+    'auth/wrong-password':'密碼錯誤',
+    'auth/invalid-credential':'帳號或密碼錯誤',
+    'auth/weak-password':'密碼至少需要 6 碼',
+    'auth/invalid-email':'Email 或學號格式錯誤',
+    'auth/email-already-in-use':'帳號已存在，請確認密碼是否正確',
+    'auth/too-many-requests':'嘗試次數過多，請稍後再試'
+  };
+  return m[err.code] || err.message;
+}
+
+async function emailPasswordFlow(email, password){
+  try{
+    await signInWithEmailAndPassword(auth, email, password);
+  }catch(err){
+    if(err.code==='auth/user-not-found' || err.code==='auth/invalid-credential'){
+      const ok = await showConfirm('查無此帳號，是否要用你輸入的密碼建立新帳號？');
+      if(!ok) return;
+      try{
+        await createUserWithEmailAndPassword(auth, email, password);
+      }catch(err2){
+        showToast('建立帳號失敗：'+authErrMsg(err2));
+      }
+    } else {
+      showToast('登入失敗：'+authErrMsg(err));
+    }
+  }
+}
+
+document.getElementById('staff-login-btn').addEventListener('click', async ()=>{
+  const email=document.getElementById('staff-email-input').value.trim();
+  const pw=document.getElementById('staff-pw-input').value;
+  if(!email||!pw){ showToast('請輸入 Email 與密碼'); return; }
+  await emailPasswordFlow(email, pw);
+});
+document.getElementById('student-login-btn').addEventListener('click', async ()=>{
+  const sid=document.getElementById('student-id-input').value.trim();
+  const pw=document.getElementById('student-pw-input').value;
+  if(!sid||!pw){ showToast('請輸入學號與密碼'); return; }
+  await emailPasswordFlow(sid+'@'+CLASS_DOMAIN, pw);
+});
+document.getElementById('who-change-btn').addEventListener('click', async ()=>{
+  if(!auth.currentUser){ document.getElementById('role-bg').classList.add('show'); return; }
+  await signOut(auth);
+});
+
+async function resolveRoleAndBoot(user){
+  myEmail = user.email;
+  let staffSnap=null;
+  try{ staffSnap = await getDoc(doc(db,'staff',myEmail)); }catch(e){ /* 權限不足代表不是伙委，忽略 */ }
+
+  if(staffSnap && staffSnap.exists()){
+    role='staff'; staffName = staffSnap.data().name || myEmail; studentId='';
+  } else if(myEmail.endsWith('@'+CLASS_DOMAIN)){
+    role='student'; studentId = myEmail.slice(0, myEmail.length-('@'+CLASS_DOMAIN).length); staffName='';
+  } else {
+    showToast('此帳號尚未取得伙委權限，請聯絡管理員新增後再登入');
+    await signOut(auth);
+    return;
+  }
+  applyRoleUI();
+  document.getElementById('role-bg').classList.remove('show');
+  subscribeAll();
+}
+
+function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); unsubs=[]; }
+
+function teardownState(){
+  teardownListeners();
+  entries={}; lunchOff={}; dinnerOff={}; events={}; eventMenu={}; eventOrders={};
+  studentsRoster={}; staffList={};
+  role=''; staffName=''; studentId=''; myEmail='';
+  collapsedDates=new Set();
+}
+
+onAuthStateChanged(auth, async (user)=>{
+  if(user){
+    document.getElementById('content').innerHTML='<div class="empty-state">載入中…</div>';
+    await resolveRoleAndBoot(user);
+  } else {
+    teardownState();
+    applyRoleUI();
+    document.getElementById('role-bg').classList.add('show');
+    document.getElementById('content').innerHTML='<div class="empty-state">請先登入</div>';
+  }
+});
+
+function applyRoleUI(){
+  document.getElementById('who-label').textContent = role==='staff' ? ('伙委'+(staffName?'・'+staffName:'')) : (role==='student' ? ('同學・學號 '+studentId) : '尚未登入');
+  document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-block' : 'none';
+  document.getElementById('tab-bar').style.display = role ? 'flex' : 'none';
+}
+
+// ============================================================
+// 即時資料訂閱（Firestore onSnapshot）
+// ============================================================
+function subscribeAll(){
+  teardownListeners();
+  const noop=()=>{};
+
+  unsubs.push(onSnapshot(doc(db,'settings','config'), snap=>{
+    if(snap.exists()) settings=Object.assign({rosterSize:49,includeTeacher:true}, snap.data());
+    render();
+  }, noop));
+
+  unsubs.push(onSnapshot(collection(db,'students'), snap=>{
+    studentsRoster={}; snap.forEach(d=>studentsRoster[d.id]=d.data()); render();
+  }, noop));
+
+  unsubs.push(onSnapshot(collection(db,'staff'), snap=>{
+    staffList={}; snap.forEach(d=>staffList[d.id]=d.data());
+  }, noop)); // 同學沒有讀取權限會出錯，noop 忽略即可
+
+  unsubs.push(onSnapshot(collection(db,'entries'), snap=>{
+    snap.docChanges().forEach(ch=>{
+      if(ch.type==='removed') delete entries[ch.doc.id];
+      else entries[ch.doc.id]=Object.assign({date:ch.doc.id}, ch.doc.data());
+    });
+    render();
+  }, noop));
+
+  unsubs.push(onSnapshot(collectionGroup(db,'lunch_off'), snap=>{
+    const grouped={};
+    snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
+    lunchOff=grouped; render();
+  }, noop));
+
+  unsubs.push(onSnapshot(collectionGroup(db,'dinner_off'), snap=>{
+    const grouped={};
+    snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
+    dinnerOff=grouped; render();
+  }, noop));
+
+  unsubs.push(onSnapshot(collection(db,'events'), snap=>{
+    snap.docChanges().forEach(ch=>{
+      if(ch.type==='removed') delete events[ch.doc.id];
+      else events[ch.doc.id]=Object.assign({id:ch.doc.id}, ch.doc.data());
+    });
+    render();
+  }, noop));
+
+  unsubs.push(onSnapshot(collectionGroup(db,'menu'), snap=>{
+    const grouped={};
+    snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
+    eventMenu=grouped; render();
+  }, noop));
+
+  unsubs.push(onSnapshot(collectionGroup(db,'orders'), snap=>{
+    const grouped={};
+    snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
+    eventOrders=grouped; render();
+  }, noop));
+}
+
+// ============================================================
+// MEAL（退餐）操作
+// ============================================================
+async function addDate(dateStr, opts){
+  opts=opts||{};
+  if(!dateStr) return;
+  if(!entries[dateStr]){
+    const data = { date:dateStr, lunch:{orderCount:null,screenshot:null}, dinner:{orderCount:null,screenshot:null}, lastEditBy:identity(), lastEditAt:new Date().toISOString() };
+    await setDoc(doc(db,'entries',dateStr), data, {merge:true});
+    if(opts.copyFromPrevWeek){ await copyOffFromPrevWeek(dateStr); }
+  }
+  collapsedDates.delete(dateStr);
+  if(!opts.silent){
+    render();
+    setTimeout(()=>{ const el=document.querySelector('[data-datecard="'+dateStr+'"]'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },60);
+  }
+}
+async function copyOffFromPrevWeek(dateStr){
+  const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
+  const batch=writeBatch(db);
+  (lunchOff[prevKey]||[]).forEach(o=>{
+    batch.set(doc(db,'entries',dateStr,'lunch_off',o.id), {studentId:o.studentId||o.id, name:o.name||o.id, date:dateStr, addedBy:identity(), addedAt:new Date().toISOString()});
+  });
+  (dinnerOff[prevKey]||[]).forEach(o=>{
+    batch.set(doc(db,'entries',dateStr,'dinner_off',o.id), {studentId:o.studentId||o.id, name:o.name||o.id, date:dateStr, addedBy:identity(), addedAt:new Date().toISOString()});
+  });
+  await batch.commit();
+}
+async function applyLastWeekTo(dateStr){
+  const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
+  if(!(lunchOff[prevKey]||dinnerOff[prevKey])){ showToast('找不到上週同星期的資料'); return; }
+  await copyOffFromPrevWeek(dateStr);
+  await touchEntry(dateStr);
+  showToast('已套用上週同星期資料');
+}
+async function addWeek(anchorDateStr){
+  if(!anchorDateStr) return;
+  const mon=getMonday(parseDate(anchorDateStr));
+  let createdNew=0;
+  for(let i=0;i<5;i++){
+    const d=new Date(mon); d.setDate(mon.getDate()+i);
+    const key=toKey(d); const isNew=!entries[key];
+    await addDate(key,{silent:true,copyFromPrevWeek:true});
+    if(isNew) createdNew++;
+  }
+  render();
+  const wk=toKey(mon);
+  setTimeout(()=>{ const el=document.querySelector('.week-group[data-week="'+wk+'"]'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); },60);
+  showToast(createdNew?'已建立整週，並自動延續上週的退餐名單':'這週的紀錄已經存在囉');
+}
+async function deleteDate(dateStr){
+  const ok=await showConfirm(dateStr+' 的紀錄要刪除嗎？此動作無法復原。');
+  if(!ok) return;
+  const lunchSnap=await getDocs(collection(db,'entries',dateStr,'lunch_off'));
+  const dinnerSnap=await getDocs(collection(db,'entries',dateStr,'dinner_off'));
+  const batch=writeBatch(db);
+  lunchSnap.forEach(d=>batch.delete(d.ref));
+  dinnerSnap.forEach(d=>batch.delete(d.ref));
+  batch.delete(doc(db,'entries',dateStr));
+  await batch.commit();
+  showToast('已刪除');
+}
+async function touchEntry(date){
+  await setDoc(doc(db,'entries',date), {lastEditBy:identity(), lastEditAt:new Date().toISOString()}, {merge:true});
+}
+function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      const img=new Image();
+      img.onload=()=>{
+        const maxW=900; const scale=Math.min(1,maxW/img.width);
+        const canvas=document.createElement('canvas');
+        canvas.width=img.width*scale; canvas.height=img.height*scale;
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL('image/jpeg',0.65));
+      };
+      img.onerror=reject; img.src=e.target.result;
+    };
+    reader.onerror=reject; reader.readAsDataURL(file);
+  });
+}
+async function handleFile(date,meal,file){
+  if(!file||!file.type.startsWith('image/')) return;
+  try{
+    const dataUrl=await compressImage(file);
+    await updateDoc(doc(db,'entries',date), {
+      [meal+'.screenshot']: dataUrl,
+      lastEditBy: identity(),
+      lastEditAt: new Date().toISOString()
+    });
+    showToast('截圖已儲存');
+  }catch(e){ showToast('截圖處理失敗：'+e.message); }
+}
+
+function mealSummary(orderCount, offList){
+  const c=(offList||[]).length; const o=(orderCount===''||orderCount==null)?'—':orderCount;
+  return '訂'+o+'・退'+c;
+}
+
+// ============================================================
+// EVENT（外食）操作
+// ============================================================
+async function createEvent(title){
+  if(!title) return;
+  const id=uid();
+  await setDoc(doc(db,'events',id), {title, createdAt:new Date().toISOString(), createdBy:identity(), lastEditBy:identity(), lastEditAt:new Date().toISOString()});
+  showToast('已建立外食訂購活動，請先新增菜單選項');
+}
+async function touchEvent(eventId){
+  await setDoc(doc(db,'events',eventId), {lastEditBy:identity(), lastEditAt:new Date().toISOString()}, {merge:true});
+}
+async function addMenuItem(eventId, name, price){
+  if(!name) return;
+  const id=uid();
+  await setDoc(doc(db,'events',eventId,'menu',id), {name, price:Number(price)||0, eventId});
+  await touchEvent(eventId);
+}
+async function removeMenuItem(eventId, itemId){
+  await deleteDoc(doc(db,'events',eventId,'menu',itemId));
+  const orders=eventOrders[eventId]||[];
+  const batch=writeBatch(db);
+  orders.forEach(o=>{
+    if(o.items && o.items[itemId]!==undefined){
+      batch.update(doc(db,'events',eventId,'orders',o.id), {['items.'+itemId]: deleteField()});
+    }
+  });
+  await batch.commit();
+  await touchEvent(eventId);
+}
+function orderTotal(order, menu){
+  return Object.entries(order.items||{}).reduce((s,[itemId,qty])=>{
+    const mi=(menu||[]).find(m=>m.id===itemId);
+    return s + (mi ? mi.price*qty : 0);
+  },0);
+}
+async function ensureParticipant(eventId, label){
+  const existing=(eventOrders[eventId]||[]).find(o=>o.id===label);
+  if(existing) return;
+  await setDoc(doc(db,'events',eventId,'orders',label), {studentId:label, name:label, items:{}, eventId, updatedBy:identity(), updatedAt:new Date().toISOString()});
+}
+async function setItemQty(eventId, label, itemId, val){
+  const qty=Math.max(0, Math.floor(Number(val)||0));
+  const existing=(eventOrders[eventId]||[]).find(o=>o.id===label);
+  const items = existing ? Object.assign({}, existing.items) : {};
+  if(qty<=0) delete items[itemId]; else items[itemId]=qty;
+  await setDoc(doc(db,'events',eventId,'orders',label), {
+    studentId: existing ? (existing.studentId||label) : label,
+    name: existing ? (existing.name||label) : label,
+    items, eventId, updatedBy:identity(), updatedAt:new Date().toISOString()
+  });
+}
+async function removeParticipant(eventId, orderId){
+  await deleteDoc(doc(db,'events',eventId,'orders',orderId));
+}
+async function addEventCustomName(eventId, name){
+  const id='other__'+uid();
+  await setDoc(doc(db,'events',eventId,'orders',id), {studentId:name, name, items:{}, eventId, updatedBy:identity(), updatedAt:new Date().toISOString()});
+}
+async function deleteEvent(id){
+  const ok=await showConfirm('「'+events[id].title+'」要刪除嗎？此動作無法復原。');
+  if(!ok) return;
+  const menuSnap=await getDocs(collection(db,'events',id,'menu'));
+  const orderSnap=await getDocs(collection(db,'events',id,'orders'));
+  const batch=writeBatch(db);
+  menuSnap.forEach(d=>batch.delete(d.ref));
+  orderSnap.forEach(d=>batch.delete(d.ref));
+  batch.delete(doc(db,'events',id));
+  await batch.commit();
+  showToast('已刪除');
+}
+function eventTotal(ev){ return (eventOrders[ev.id]||[]).reduce((s,o)=>s+orderTotal(o, eventMenu[ev.id]||[]),0); }
+
+// ============================================================
+// RENDER
+// ============================================================
+function render(){
+  if(!role){ document.getElementById('content').innerHTML='<div class="empty-state">請先登入</div>'; return; }
+  if(activeTab==='meal') renderMealTab(); else renderEventTab();
+}
+
+function pendingRosterNote(){
+  if(role==='student' && !studentsRoster[studentId]){
+    return `<div class="pending-note">你的學號「${escapeHtml(studentId)}」尚未列入名冊，退餐/訂購資料可能無法儲存，請聯絡伙委確認座號設定。</div>`;
+  }
+  return '';
+}
+
+function renderMealTab(){
+  const content=document.getElementById('content');
+  const dates=Object.keys(entries).sort((a,b)=>b.localeCompare(a));
+
+  let addBarHtml='';
+  if(role==='staff'){
+    addBarHtml = `
+    <div class="add-bar">
+      <label for="date-input">選擇日期</label>
+      <input type="date" id="date-input" value="${todayStr()}">
+      <button class="btn btn-ghost" id="add-date-btn">＋新增單日</button>
+      <button class="btn btn-primary" id="add-week-btn">＋新增整週（一～五，自動延續上週）</button>
+    </div>`;
+  }
+  const noteHtml = pendingRosterNote();
+
+  if(dates.length===0){
+    content.innerHTML = addBarHtml + noteHtml + `<div class="empty-state">${role==='staff' ? '目前沒有紀錄，選擇日期後新增單日或整週' : '伙委尚未建立日期，請稍後再來確認'}</div>`;
+    return;
+  }
+
+  const weeks={};
+  dates.forEach(d=>{ const wk=weekKey(d); (weeks[wk]=weeks[wk]||[]).push(d); });
+  const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
+
+  let html=addBarHtml+noteHtml;
+  weekKeys.forEach(wk=>{
+    const ds=weeks[wk].sort((a,b)=>a.localeCompare(b));
+    html += '<div class="week-group" data-week="'+wk+'"><div class="week-title">'+weekLabel(wk)+'</div>';
+    ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
+    html += '</div>';
+  });
+  content.innerHTML = html;
+}
+
+function renderStaffDateCard(date){
+  const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
+  const lOff=lunchOff[date]||[], dOff=dinnerOff[date]||[];
+  return `
+  <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
+    <div class="date-head" data-action="toggle" data-date="${date}">
+      <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
+      <div class="date-head-right"><span class="chip-summary">午 ${mealSummary(e.lunch&&e.lunch.orderCount,lOff)}</span><span class="chip-summary">晚 ${mealSummary(e.dinner&&e.dinner.orderCount,dOff)}</span></div>
+    </div>
+    <div class="date-body">
+      ${renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lOff)}
+      ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dOff)}
+    </div>
+    <div class="date-foot">
+      <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button><button class="copy-last-btn" data-action="copy-last-week" data-date="${date}">套用上週同星期</button></div>
+      <span class="edit-tag">${e.lastEditBy?'最後編輯：'+escapeHtml(e.lastEditBy)+' · '+fmtTime(e.lastEditAt):''}</span>
+    </div>
+  </div>`;
+}
+
+function renderStaffMealCard(date, meal, label, m, offList){
+  const shotId=date+'-'+meal;
+  const roster=rosterLabels();
+  const grid=roster.map(lab=>{
+    const off=offList.some(c=>c.id===lab);
+    return `<span class="number-cell ${off?'off':'on'}" data-action="toggle-num" data-date="${date}" data-meal="${meal}" data-label="${lab}">${lab}</span>`;
+  }).join('');
+  const others=offList.filter(c=>!roster.includes(c.id));
+  const orderCount = (m.orderCount===undefined||m.orderCount===null) ? '' : m.orderCount;
+  const screenshot = m.screenshot || null;
+  return `
+  <div class="meal-card ${meal}">
+    <div class="meal-title"><span class="dot"></span>${label}</div>
+    <div class="field-row"><label>目前訂餐人數</label><input type="number" min="0" value="${orderCount}" data-action="order-count" data-date="${date}" data-meal="${meal}" placeholder="—"></div>
+    <div class="section-label">已退餐 <b>${offList.length}</b> 人（點座號切換）</div>
+    <div class="number-grid">${grid}</div>
+    ${others.length?`<div class="other-label">其他（非座號名單）</div><div class="chips">${others.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}<button data-action="remove-name" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
+    <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
+    ${screenshot?`<div class="shot-zone" tabindex="0" data-action="paste-zone" data-date="${date}" data-meal="${meal}"><img src="${screenshot}" data-action="view-shot" data-src="${screenshot}"><div class="shot-actions"><span data-action="replace-shot" data-date="${date}" data-meal="${meal}">更換截圖</span><span class="danger" data-action="remove-shot" data-date="${date}" data-meal="${meal}">移除</span></div></div>`:`<div class="shot-zone" tabindex="0" data-action="paste-zone" data-date="${date}" data-meal="${meal}">📎 點此上傳或貼上截圖</div>`}
+    <input type="file" accept="image/*" data-file-for="${shotId}">
+  </div>`;
+}
+
+function renderStudentDateCard(date){
+  const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
+  const lOff=lunchOff[date]||[], dOff=dinnerOff[date]||[];
+  return `
+  <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
+    <div class="date-head" data-action="toggle" data-date="${date}">
+      <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
+      <div class="date-head-right"><span class="chip-summary">午 ${mealSummary(e.lunch&&e.lunch.orderCount,lOff)}</span><span class="chip-summary">晚 ${mealSummary(e.dinner&&e.dinner.orderCount,dOff)}</span></div>
+    </div>
+    <div class="date-body">
+      ${renderStudentMealCard(date,'lunch','午餐',e.lunch||{},lOff)}
+      ${renderStudentMealCard(date,'dinner','晚餐',e.dinner||{},dOff)}
+    </div>
+  </div>`;
+}
+
+function renderStudentMealCard(date, meal, label, m, offList){
+  const off = offList.some(c=>c.id===studentId);
+  const screenshot = m.screenshot || null;
+  return `
+  <div class="meal-card ${meal}">
+    <div class="meal-title"><span class="dot"></span>${label}</div>
+    <div class="own-toggle" data-action="student-toggle" data-date="${date}" data-meal="${meal}">
+      <div><div class="lab">我要退餐</div><div class="state-label">${off?'已標記退餐':'目前有訂餐'}</div></div>
+      <div class="switch ${off?'on':''}"><div class="knob"></div></div>
+    </div>
+    ${screenshot?`<div class="shot-zone" data-action="view-shot" data-src="${screenshot}"><img src="${screenshot}">佐證截圖（點擊放大）</div>`:''}
+  </div>`;
+}
+
+function renderEventTab(){
+  const content=document.getElementById('content');
+  const list=Object.values(events).sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+
+  let addHtml='';
+  if(role==='staff'){
+    addHtml = `<div class="add-bar"><label for="event-title-input">活動名稱</label><input type="text" id="event-title-input" placeholder="例如：8/10 雞排店合購"><button class="btn btn-outside" id="create-event-btn">＋新增外食訂購活動</button></div>`;
+  }
+  const noteHtml = pendingRosterNote();
+
+  const totalAll = list.reduce((s,ev)=>s+eventTotal(ev),0);
+  const overviewHtml = `<div class="overview">
+    <div class="stat"><span class="num">NT$ ${totalAll}</span><span class="lab">全部活動總金額</span></div>
+    <div class="stat"><span class="num">${list.length}</span><span class="lab">已建立活動數</span></div>
+  </div>`;
+
+  if(list.length===0){
+    content.innerHTML = addHtml + noteHtml + overviewHtml + `<div class="empty-state">${role==='staff'?'還沒有外食訂購活動，建立一個開始收單吧':'目前沒有進行中的外食訂購活動'}</div>`;
+    return;
+  }
+
+  let html = addHtml + noteHtml + overviewHtml;
+  list.forEach(ev=>{ html += role==='staff' ? renderStaffEventCard(ev) : renderStudentEventCard(ev); });
+  content.innerHTML = html;
+}
+
+function renderStaffEventCard(ev){
+  const menu = eventMenu[ev.id]||[];
+  const orders = eventOrders[ev.id]||[];
+  const roster=rosterLabels();
+  const total=eventTotal(ev);
+
+  const menuChips = menu.map(mi=>`<span class="name-chip">${escapeHtml(mi.name)} · NT$${mi.price}<button data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}">×</button></span>`).join('');
+
+  const grid=roster.map(lab=>{
+    const active=orders.some(o=>o.id===lab);
+    return `<span class="number-cell outside-cell ${active?'active':''}" data-action="add-participant" data-event="${ev.id}" data-label="${lab}">${lab}</span>`;
+  }).join('');
+
+  const orderRows = orders.map(o=>{
+    const sub = orderTotal(o, menu);
+    const itemInputs = menu.map(mi=>`
+      <span class="qty-item">
+        <span class="qty-item-name">${escapeHtml(mi.name)}</span>
+        <input type="number" min="0" class="qty-input" value="${(o.items&&o.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${o.id}" data-item="${mi.id}">
+      </span>`).join('');
+    return `
+    <div class="outside-row" style="align-items:flex-start;flex-wrap:wrap;">
+      <span class="outside-name" style="padding-top:4px;">${escapeHtml(o.name||o.id)}</span>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;">${itemInputs || '<span class="other-label">尚未新增菜單選項</span>'}</div>
+      <span class="outside-currency" style="padding-top:4px;">NT$${sub}</span>
+      <button class="outside-remove" data-action="remove-participant" data-event="${ev.id}" data-id="${o.id}">×</button>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="event-card">
+    <div class="event-head">
+      <h3>${escapeHtml(ev.title)}</h3>
+      <div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span><span>由 ${escapeHtml(ev.createdBy||'')}</span>${ev.lastEditBy?`<span>最後編輯：${escapeHtml(ev.lastEditBy)} · ${fmtTime(ev.lastEditAt)}</span>`:''}</div>
+    </div>
+    <div class="event-body">
+      <div class="section-label">菜單選項（同學下單時會直接套用金額）</div>
+      <div class="chips">${menuChips || '<span class="other-label">尚未新增選項，請先在下方新增</span>'}</div>
+      <div class="add-name-row">
+        <input type="text" placeholder="品項名稱" data-role="menu-name" data-event="${ev.id}" style="flex:2;">
+        <input type="number" min="0" placeholder="金額" data-role="menu-price" data-event="${ev.id}" style="flex:1;">
+        <button data-action="add-menu-item" data-event="${ev.id}">新增選項</button>
+      </div>
+
+      <div class="section-label" style="margin-top:12px;">快速加入座號（點座號把人加進下方名單）</div>
+      <div class="number-grid">${grid}</div>
+
+      ${orders.length ? `<div class="outside-list">${orderRows}</div>` : ''}
+      <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="event-name-input" data-event="${ev.id}"><button data-action="add-event-name" data-event="${ev.id}">新增</button></div>
+      <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}</div>
+    </div>
+    <div class="event-delete"><button class="date-delete" data-action="delete-event" data-event="${ev.id}">刪除此活動</button></div>
+  </div>`;
+}
+
+function renderStudentEventCard(ev){
+  const menu = eventMenu[ev.id]||[];
+  const orders = eventOrders[ev.id]||[];
+  const mine = orders.find(o=>o.id===studentId) || {items:{}};
+  const mySub = orderTotal(mine, menu);
+  const total = eventTotal(ev);
+
+  const itemRows = menu.map(mi=>`
+    <div class="outside-row">
+      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}</span>
+      <span class="outside-currency">NT$${mi.price}</span>
+      <input type="number" min="0" class="outside-amount" value="${(mine.items&&mine.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${studentId}" data-item="${mi.id}">
+    </div>`).join('');
+
+  return `
+  <div class="event-card">
+    <div class="event-head"><h3>${escapeHtml(ev.title)}</h3><div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span></div></div>
+    <div class="event-body">
+      <div class="section-label">目前已有 <b>${orders.length}</b> 人參加・總金額 <b>NT$ ${total}</b></div>
+      ${menu.length ? `
+        <div class="section-label" style="margin-top:8px;">選擇品項與數量（可重複訂購）</div>
+        <div class="outside-list">${itemRows}</div>
+        <div class="outside-total">我的金額：NT$ ${mySub}</div>
+      ` : `<div class="other-label">伙委尚未設定菜單選項</div>`}
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// DOM EVENTS
+// ============================================================
+document.getElementById('content').addEventListener('click', async (ev)=>{
+  const el=ev.target.closest('[data-action]'); if(!el) return;
+  const action=el.dataset.action, date=el.dataset.date, meal=el.dataset.meal, eventId=el.dataset.event;
+
+  if(action==='toggle'){
+    if(ev.target.closest('.date-delete')||ev.target.closest('.copy-last-btn')) return;
+    if(collapsedDates.has(date)) collapsedDates.delete(date); else collapsedDates.add(date);
+    render();
+  }
+  else if(action==='toggle-num'){
+    const label=el.dataset.label;
+    const collName = meal==='lunch'?'lunch_off':'dinner_off';
+    const list = meal==='lunch'?lunchOff:dinnerOff;
+    const existing=(list[date]||[]).find(o=>o.id===label);
+    const ref=doc(db,'entries',date,collName,label);
+    if(existing) await deleteDoc(ref);
+    else await setDoc(ref, {studentId:label, name:label, date, addedBy:identity(), addedAt:new Date().toISOString()});
+    await touchEntry(date);
+  }
+  else if(action==='student-toggle'){
+    const collName = meal==='lunch'?'lunch_off':'dinner_off';
+    const list = meal==='lunch'?lunchOff:dinnerOff;
+    const existing=(list[date]||[]).find(o=>o.id===studentId);
+    const ref=doc(db,'entries',date,collName,studentId);
+    if(existing){ await deleteDoc(ref); showToast('已取消退餐標記'); }
+    else{ await setDoc(ref,{studentId,name:studentId,date,addedBy:identity(),addedAt:new Date().toISOString()}); showToast('已標記退餐'); }
+  }
+  else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
+  else if(action==='copy-last-week'){ ev.stopPropagation(); await applyLastWeekTo(date); }
+  else if(action==='add-name'){
+    const input=document.querySelector(`input[data-action="name-input"][data-date="${date}"][data-meal="${meal}"]`);
+    const name=input.value.trim(); if(!name) return;
+    const collName = meal==='lunch'?'lunch_off':'dinner_off';
+    const id='other__'+uid();
+    await setDoc(doc(db,'entries',date,collName,id), {studentId:id, name, date, addedBy:identity(), addedAt:new Date().toISOString()});
+    await touchEntry(date);
+    input.value='';
+  }
+  else if(action==='remove-name'){
+    const collName = meal==='lunch'?'lunch_off':'dinner_off';
+    await deleteDoc(doc(db,'entries',date,collName,el.dataset.id));
+    await touchEntry(date);
+  }
+  else if(action==='view-shot'){ document.getElementById('modal-img').src=el.dataset.src; document.getElementById('modal-bg').classList.add('show'); }
+  else if(action==='remove-shot'){
+    await updateDoc(doc(db,'entries',date), {[meal+'.screenshot']:null, lastEditBy:identity(), lastEditAt:new Date().toISOString()});
+    showToast('截圖已移除');
+  }
+  else if(action==='replace-shot'||action==='paste-zone'){
+    if(ev.target.dataset.action==='view-shot') return;
+    const fi=document.querySelector(`input[type=file][data-file-for="${date}-${meal}"]`); if(fi) fi.click();
+  }
+  else if(action==='delete-event'){ ev.stopPropagation(); await deleteEvent(eventId); }
+  else if(action==='add-menu-item'){
+    const nameInput=document.querySelector(`input[data-role="menu-name"][data-event="${eventId}"]`);
+    const priceInput=document.querySelector(`input[data-role="menu-price"][data-event="${eventId}"]`);
+    const name=nameInput.value.trim(); const price=priceInput.value;
+    if(!name){ showToast('請輸入品項名稱'); return; }
+    await addMenuItem(eventId, name, price);
+  }
+  else if(action==='remove-menu-item'){ await removeMenuItem(eventId, el.dataset.item); }
+  else if(action==='add-participant'){ await ensureParticipant(eventId, el.dataset.label); }
+  else if(action==='remove-participant'){ await removeParticipant(eventId, el.dataset.id); }
+  else if(action==='add-event-name'){
+    const input=document.querySelector(`input[data-action="event-name-input"][data-event="${eventId}"]`);
+    const name=input.value.trim(); if(!name) return;
+    await addEventCustomName(eventId, name);
+    input.value='';
+  }
+});
+
+document.getElementById('content').addEventListener('keydown', async (ev)=>{
+  if(ev.target.dataset.action==='name-input' && ev.key==='Enter'){
+    ev.preventDefault();
+    const date=ev.target.dataset.date, meal=ev.target.dataset.meal, name=ev.target.value.trim();
+    if(!name) return;
+    const collName = meal==='lunch'?'lunch_off':'dinner_off';
+    const id='other__'+uid();
+    await setDoc(doc(db,'entries',date,collName,id), {studentId:id, name, date, addedBy:identity(), addedAt:new Date().toISOString()});
+    await touchEntry(date);
+    ev.target.value='';
+  }
+  else if(ev.target.dataset.action==='event-name-input' && ev.key==='Enter'){
+    ev.preventDefault();
+    const eventId=ev.target.dataset.event, name=ev.target.value.trim();
+    if(!name) return;
+    await addEventCustomName(eventId, name);
+    ev.target.value='';
+  }
+});
+
+document.getElementById('content').addEventListener('change', async (ev)=>{
+  if(ev.target.dataset.action==='order-count'){
+    const date=ev.target.dataset.date, meal=ev.target.dataset.meal, val=ev.target.value;
+    const orderCount = val===''?null:Number(val);
+    await updateDoc(doc(db,'entries',date), {[meal+'.orderCount']:orderCount, lastEditBy:identity(), lastEditAt:new Date().toISOString()});
+  }
+  else if(ev.target.dataset.action==='item-qty'){
+    await setItemQty(ev.target.dataset.event, ev.target.dataset.label, ev.target.dataset.item, ev.target.value);
+  }
+  else if(ev.target.matches('input[type=file]')){
+    const key=ev.target.dataset.fileFor; const parts=key.split('-'); const meal=parts.pop(); const date=parts.join('-');
+    const file=ev.target.files[0]; await handleFile(date,meal,file); ev.target.value='';
+  }
+});
+
+document.getElementById('content').addEventListener('paste', async (ev)=>{
+  const zone=ev.target.closest('[data-action="paste-zone"]'); if(!zone) return;
+  const items=(ev.clipboardData||window.clipboardData).items;
+  for(const item of items){ if(item.type.startsWith('image/')){ await handleFile(zone.dataset.date, zone.dataset.meal, item.getAsFile()); break; } }
+});
+
+document.getElementById('content').addEventListener('click', async (ev)=>{
+  if(ev.target.id==='add-date-btn'){ const v=document.getElementById('date-input').value; if(!v){showToast('請先選擇日期');return;} addDate(v,{copyFromPrevWeek:true}); }
+  else if(ev.target.id==='add-week-btn'){ const v=document.getElementById('date-input').value; if(!v){showToast('請先選擇日期');return;} addWeek(v); }
+  else if(ev.target.id==='create-event-btn'){ const inp=document.getElementById('event-title-input'); const t=inp.value.trim(); if(!t){showToast('請輸入活動名稱');return;} createEvent(t); inp.value=''; }
+});
+
+document.getElementById('modal-bg').addEventListener('click',()=>document.getElementById('modal-bg').classList.remove('show'));
+
+// settings
+document.getElementById('gear-btn').addEventListener('click',()=>{
+  document.getElementById('set-roster').value=settings.rosterSize;
+  document.getElementById('set-teacher').checked=settings.includeTeacher;
+  document.getElementById('settings-bg').classList.add('show');
+});
+document.getElementById('settings-cancel').addEventListener('click',()=>document.getElementById('settings-bg').classList.remove('show'));
+document.getElementById('settings-bg').addEventListener('click',(ev)=>{ if(ev.target.id==='settings-bg') document.getElementById('settings-bg').classList.remove('show'); });
+document.getElementById('settings-save').addEventListener('click', async ()=>{
+  const rosterSize=Number(document.getElementById('set-roster').value)||0;
+  const includeTeacher=document.getElementById('set-teacher').checked;
+  await setDoc(doc(db,'settings','config'), {rosterSize, includeTeacher, updatedBy:identity(), updatedAt:new Date().toISOString()}, {merge:true});
+
+  const labels=(function(){
+    const ls=[]; if(includeTeacher) ls.push('師');
+    const n=Math.max(0,Math.min(99,rosterSize));
+    for(let i=1;i<=n;i++) ls.push(String(i).padStart(2,'0'));
+    return ls;
+  })();
+  const batch=writeBatch(db);
+  labels.forEach(lab=> batch.set(doc(db,'students',lab), {name:studentsRoster[lab]?.name||'', updatedAt:new Date().toISOString()}, {merge:true}));
+  await batch.commit();
+
+  document.getElementById('settings-bg').classList.remove('show');
+  showToast('設定已儲存，名冊已同步');
+});
+document.getElementById('add-staff-btn').addEventListener('click', async ()=>{
+  const email=document.getElementById('set-staff-email').value.trim();
+  if(!email){ showToast('請輸入 Email'); return; }
+  await setDoc(doc(db,'staff',email), {addedBy:identity(), addedAt:new Date().toISOString()}, {merge:true});
+  document.getElementById('set-staff-email').value='';
+  showToast('已新增伙委權限（對方需重新整理頁面才會生效）');
+});
+
+// tabs
+document.getElementById('tab-meal-btn').addEventListener('click',()=>{ activeTab='meal'; document.getElementById('tab-meal-btn').classList.add('active'); document.getElementById('tab-event-btn').classList.remove('active'); render(); });
+document.getElementById('tab-event-btn').addEventListener('click',()=>{ activeTab='event'; document.getElementById('tab-event-btn').classList.add('active'); document.getElementById('tab-meal-btn').classList.remove('active'); render(); });
+</script>
+</body>
+</html>

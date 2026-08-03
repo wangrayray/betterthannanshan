@@ -1,0 +1,117 @@
+rules_version = '2';
+
+// ============================================================
+// 班務系統（退餐紀錄／外食訂購）Firestore 安全規則
+//
+// 角色判斷：
+//   - 伙委（staff）：Firebase Auth 帳號的 email，剛好在 /staff/{email} 底下有一筆文件，
+//     即視為伙委，可讀寫所有 collection。
+//   - 同學（student）：Firebase Auth 帳號的 email 格式為 學號@yourclass.local
+//     （網域字串需與 index.html 內的 CLASS_DOMAIN 常數一致）。
+//     同學只能寫入「自己學號」對應的文件（退餐狀態 lunch_off/dinner_off、
+//     外食訂單 orders），且該學號必須已存在於 /students 名冊中才允許寫入。
+//
+// 注意：CLASS_DOMAIN 這裡寫死在規則裡（下方 studentIdOf() 函式），
+// 如果你把 index.html 裡的 CLASS_DOMAIN 改成別的字串，這裡也要跟著改。
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myEmail() {
+      return request.auth.token.email;
+    }
+
+    // 依 Firestore 是否存在 /staff/{email} 文件來判斷是否為伙委
+    function isStaff() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/staff/$(myEmail()));
+    }
+
+    // CLASS_DOMAIN：需與 index.html 中的常數一致
+    function classDomain() {
+      return 'yourclass.local';
+    }
+
+    function isStudentAccount() {
+      return isSignedIn() && myEmail().matches('.*@' + classDomain());
+    }
+
+    function studentIdOf() {
+      return myEmail().split('@')[0];
+    }
+
+    // 該學號是否已被伙委登記在名冊（/students/{studentId}）中
+    function isRosterStudent() {
+      return isStudentAccount() &&
+        exists(/databases/$(database)/documents/students/$(studentIdOf()));
+    }
+
+    // 目標文件 id 是否等於「我自己的學號」
+    function isOwnId(id) {
+      return isStudentAccount() && id == studentIdOf();
+    }
+
+    // ---------------- settings ----------------
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+    }
+
+    // ---------------- students（全班學號名冊） ----------------
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+    }
+
+    // ---------------- staff（伙委名單，文件 id = email） ----------------
+    match /staff/{email} {
+      // 只有伙委才能讀寫（讀取用於在設定頁列出目前伙委，若不需要可再放寬）
+      allow read: if isStaff();
+      allow write: if isStaff();
+      // 注意：第一位伙委無法透過此規則自行建立，
+      // 必須由專案擁有者在 Firebase Console 手動新增第一筆 staff 文件。
+    }
+
+    // ---------------- entries（退餐紀錄，依日期） ----------------
+    match /entries/{date} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+
+      match /lunch_off/{sid} {
+        allow read: if isSignedIn();
+        allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
+      }
+
+      match /dinner_off/{sid} {
+        allow read: if isSignedIn();
+        allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
+      }
+    }
+
+    // ---------------- events（外食訂購活動） ----------------
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+
+      match /menu/{itemId} {
+        allow read: if isSignedIn();
+        allow write: if isStaff();
+      }
+
+      match /orders/{sid} {
+        allow read: if isSignedIn();
+        allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
+      }
+    }
+
+    // 預設拒絕所有其他路徑
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
