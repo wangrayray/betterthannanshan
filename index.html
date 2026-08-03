@@ -38,7 +38,19 @@
   .id-bar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-soft);margin-bottom:14px;flex-wrap:wrap;}
   .id-bar b{color:var(--ink);}
   .id-bar button{border:none;background:none;color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:12px;padding:0;}
-  .gear-btn{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--paper);cursor:pointer;font-size:14px;margin-left:auto;}
+  .gear-btn{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--paper);cursor:pointer;font-size:14px;margin-left:8px;}
+  .bell-btn{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--paper);cursor:pointer;font-size:14px;margin-left:auto;position:relative;}
+  .bell-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:10px;min-width:16px;height:16px;font-size:10px;line-height:16px;text-align:center;padding:0 3px;display:none;}
+  .bell-badge.show{display:block;}
+  .notif-panel{background:var(--paper);border-radius:14px;padding:18px;width:100%;max-width:420px;max-height:80vh;overflow-y:auto;box-shadow:var(--shadow);margin:auto;}
+  .notif-panel h3{margin:0 0 4px;font-family:'Zen Maru Gothic',sans-serif;font-size:16px;}
+  .notif-panel .sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;}
+  .notif-list{display:flex;flex-direction:column;gap:6px;}
+  .notif-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--danger-bg);border-radius:8px;padding:8px 10px;}
+  .notif-info{display:flex;flex-direction:column;gap:1px;}
+  .notif-main{font-size:13px;font-weight:700;color:var(--danger);}
+  .notif-time{font-size:11px;color:var(--ink-soft);}
+  .notif-close{display:flex;justify-content:flex-end;margin-top:12px;}
 
   .tab-bar{display:flex;gap:8px;margin-bottom:18px;}
   .tab-btn{flex:1;font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:14px;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);cursor:pointer;}
@@ -248,6 +260,7 @@
   <div class="id-bar">
     身份：<b id="who-label">尚未登入</b>
     <button id="who-change-btn">登出 / 切換帳號</button>
+    <button class="bell-btn" id="bell-btn" title="退餐通知（伙委）" style="display:none;">🔔<span class="bell-badge" id="bell-badge">0</span></button>
     <button class="gear-btn" id="gear-btn" title="座號設定（伙委）" style="display:none;">⚙️</button>
   </div>
 
@@ -271,6 +284,15 @@
     <div id="gmap-canvas"></div>
     <div id="gmap-selected-info"></div>
     <button type="button" class="btn btn-primary" id="gmap-confirm-btn" disabled>✅ 推薦這個地點</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="notif-bg">
+  <div class="notif-panel">
+    <h3>🔔 退餐通知</h3>
+    <div class="sub">列出目前所有「退餐」紀錄（不含訂餐／葷素選擇），依時間最新排序。打開這個視窗會把目前看到的都標記為已讀。</div>
+    <div id="notif-list-wrap"></div>
+    <div class="notif-close"><button class="btn btn-ghost" id="notif-close-btn">關閉</button></div>
   </div>
 </div>
 
@@ -373,6 +395,67 @@ const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true, u
 // ============================================================
 const WD = ['日','一','二','三','四','五','六'];
 const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐'};
+const MEAL_LABEL = {lunch:'午餐', dinner:'晚餐'};
+const NOTIF_SEEN_KEY = 'cancelNotifLastSeen';
+// ============================================================
+// 伙委端「退餐通知」——只列出退餐（不列訂餐/葷素），從既有的
+// lunchChoice/dinnerChoice 本機狀態直接算出來，不需要新的 Firestore 資料結構。
+// 「已讀」用瀏覽器 localStorage 記錄最後查看時間（每台裝置各自記錄），
+// 打開通知視窗時，會把當下看到的這幾筆都標記為已讀。
+// ============================================================
+function computeCancelNotifications(){
+  const list=[];
+  ['lunch','dinner'].forEach(meal=>{
+    const src = meal==='lunch' ? lunchChoice : dinnerChoice;
+    Object.keys(src).forEach(date=>{
+      (src[date]||[]).forEach(c=>{
+        if(c.status==='cancel'){
+          list.push({
+            key: date+'|'+meal+'|'+c.id,
+            date, meal,
+            label: c.seatNo || c.name || c.id,
+            updatedAt: c.updatedAt || ''
+          });
+        }
+      });
+    });
+  });
+  list.sort((a,b)=> (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  return list;
+}
+function getNotifLastSeen(){
+  try{ return localStorage.getItem(NOTIF_SEEN_KEY) || ''; }catch(e){ return ''; }
+}
+function setNotifLastSeen(ts){
+  try{ localStorage.setItem(NOTIF_SEEN_KEY, ts); }catch(e){}
+}
+function updateBellBadge(){
+  const badge=document.getElementById('bell-badge');
+  if(!badge) return;
+  if(role!=='staff'){ badge.classList.remove('show'); return; }
+  const lastSeen=getNotifLastSeen();
+  const unread=computeCancelNotifications().filter(n=>n.updatedAt > lastSeen).length;
+  badge.textContent = unread>99 ? '99+' : String(unread);
+  badge.classList.toggle('show', unread>0);
+}
+function renderNotifPanel(){
+  const list=computeCancelNotifications();
+  const wrap=document.getElementById('notif-list-wrap');
+  wrap.innerHTML = list.length ? `
+    <div class="notif-list">
+      ${list.map(n=>`
+        <div class="notif-row">
+          <div class="notif-info">
+            <span class="notif-main">${escapeHtml(n.date)}・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} 退餐</span>
+            <span class="notif-time">${n.updatedAt ? new Date(n.updatedAt).toLocaleString('zh-TW') : ''}</span>
+          </div>
+        </div>`).join('')}
+    </div>` : `<div class="empty-state">目前沒有任何退餐紀錄</div>`;
+  // 標記為已讀：用目前列表中最新的一筆時間當作「已看過」的分界點
+  if(list.length){ setNotifLastSeen(list[0].updatedAt || new Date().toISOString()); }
+  else{ setNotifLastSeen(new Date().toISOString()); }
+  updateBellBadge();
+}
 let entries = {};      // date -> {date,lunch:{screenshot},dinner:{...},lastEditBy,lastEditAt}
 let lunchChoice = {};   // date -> [{id,seatNo,name,status:'meat'|'veg'|'cancel',note,updatedBy,updatedAt}]
 let dinnerChoice = {};  // date -> [...]
@@ -561,7 +644,9 @@ function applyRoleUI(){
   else if(role==='student') label = (isCoordinatorActive()?'外食訂購人':'同學')+'・座號 '+studentId;
   document.getElementById('who-label').textContent = label;
   document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-block' : 'none';
+  document.getElementById('bell-btn').style.display = role==='staff' ? 'inline-block' : 'none';
   document.getElementById('tab-bar').style.display = role ? 'flex' : 'none';
+  updateBellBadge();
 }
 
 // ============================================================
@@ -1027,6 +1112,7 @@ async function removeRecommendation(eventId, recId){
 function render(){
   if(!role){ document.getElementById('content').innerHTML='<div class="empty-state">請先登入</div>'; return; }
   if(activeTab==='meal') renderMealTab(); else renderEventTab();
+  updateBellBadge();
 }
 
 function pendingRosterNote(){
@@ -1592,6 +1678,17 @@ document.getElementById('gear-btn').addEventListener('click',()=>{
   document.getElementById('set-teacher').checked=settings.includeTeacher;
   renderCoordinatorList();
   document.getElementById('settings-bg').classList.add('show');
+});
+
+document.getElementById('bell-btn').addEventListener('click',()=>{
+  renderNotifPanel();
+  document.getElementById('notif-bg').classList.add('show');
+});
+document.getElementById('notif-close-btn').addEventListener('click',()=>{
+  document.getElementById('notif-bg').classList.remove('show');
+});
+document.getElementById('notif-bg').addEventListener('click',(ev)=>{
+  if(ev.target.id==='notif-bg') document.getElementById('notif-bg').classList.remove('show');
 });
 document.getElementById('settings-cancel').addEventListener('click',()=>document.getElementById('settings-bg').classList.remove('show'));
 document.getElementById('settings-bg').addEventListener('click',(ev)=>{ if(ev.target.id==='settings-bg') document.getElementById('settings-bg').classList.remove('show'); });
