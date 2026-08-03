@@ -108,6 +108,10 @@
   .choice-btn.active.cancel{background:var(--danger);color:#fff;border-color:var(--danger);}
   .note-input{width:100%;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:12.5px;background:#fff;margin-top:2px;}
   .note-input:disabled{background:var(--paper-soft);color:var(--ink-soft);}
+  .submit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);}
+  .submit-row .submit-status{font-size:11.5px;color:var(--ink-soft);}
+  .submit-row.dirty .submit-status{color:var(--outside);font-weight:700;}
+  .submit-row .btn-submit-choice{padding:7px 14px;font-size:12.5px;}
 
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
   .name-chip{display:flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 6px 4px 10px;font-size:12.5px;}
@@ -320,6 +324,7 @@ let settings = { rosterSize:49, includeTeacher:true };
 let studentsRoster = {}; // studentId -> {name}
 let staffList = {};      // email -> {name}
 let eventCoordinators = {}; // seatNo -> {expiresAt,grantedBy,grantedAt}
+let draftChoice = {};    // "date|meal" -> {status,note}  同學按選項時的本機暫存，按「確定送出」才會真的寫入 Firestore
 
 let collapsedDates = new Set();
 let role = '';          // 'staff' | 'student' | ''
@@ -449,7 +454,7 @@ function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); un
 function teardownState(){
   teardownListeners();
   entries={}; lunchChoice={}; dinnerChoice={}; events={}; eventMenu={}; eventOrders={};
-  studentsRoster={}; staffList={}; eventCoordinators={};
+  studentsRoster={}; staffList={}; eventCoordinators={}; draftChoice={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
 }
@@ -811,6 +816,8 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
   }).join('');
   const others=choiceList.filter(c=>!roster.includes(c.id));
   const notesList=choiceList.filter(c=>c.note);
+  const unsetSeats=roster.filter(lab=>!choiceList.some(c=>c.id===lab));
+  const cancelSeats=roster.filter(lab=>{ const c=choiceList.find(x=>x.id===lab); return c && c.status==='cancel'; });
   const screenshot = m.screenshot || null;
   return `
   <div class="meal-card ${meal}">
@@ -818,6 +825,8 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
     <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人・尚未選擇 <b>${counts.unset}</b> 人</div>
     <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 未選）</div>
     <div class="number-grid">${grid}</div>
+    ${unsetSeats.length?`<div class="pending-note" style="margin:0 0 8px;">尚未選擇（${unsetSeats.length}）：${unsetSeats.map(escapeHtml).join('、')}</div>`:''}
+    ${cancelSeats.length?`<div class="other-label">退餐：${cancelSeats.map(escapeHtml).join('、')}</div>`:''}
     ${others.length?`<div class="other-label">其他（非座號名單，點擊姓名可切換狀態）</div><div class="chips">${others.map(c=>`<span class="name-chip" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${c.id}">${escapeHtml(c.name||c.id)}・${STATUS_LABEL[c.status]||'未選'}<button data-action="remove-choice" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
     <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
     ${notesList.length?`<div class="other-label">備註</div><div class="chips">${notesList.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}：${escapeHtml(c.note)}<button data-action="clear-note" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
@@ -844,18 +853,31 @@ function renderStudentDateCard(date){
 
 function renderStudentMealCard(date, meal, label, m, choiceList){
   const mine=choiceList.find(c=>c.id===studentId);
-  const status=mine?mine.status:'';
-  const note=mine?(mine.note||''):'';
+  const savedStatus=mine?mine.status:'';
+  const savedNote=mine?(mine.note||''):'';
+  const key=date+'|'+meal;
+  const draft=draftChoice[key];
+  const dirty=!!draft;
+  const status=dirty?draft.status:savedStatus;
+  const note=dirty?draft.note:savedNote;
   const screenshot = m.screenshot || null;
+  let statusLine;
+  if(dirty) statusLine='已選擇「'+(STATUS_LABEL[status]||'取消選擇')+'」，尚未送出（僅暫存於本機）';
+  else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
+  else statusLine='尚未選擇';
   return `
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}</div>
     <div class="choice-buttons">
-      <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="choose-status" data-date="${date}" data-meal="${meal}" data-status="meat">🍖 葷食</button>
-      <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="choose-status" data-date="${date}" data-meal="${meal}" data-status="veg">🥦 素食</button>
-      <button type="button" class="choice-btn cancel ${status==='cancel'?'active':''}" data-action="choose-status" data-date="${date}" data-meal="${meal}" data-status="cancel">🚫 退餐</button>
+      <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="meat">🍖 葷食</button>
+      <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="veg">🥦 素食</button>
+      <button type="button" class="choice-btn cancel ${status==='cancel'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="cancel">🚫 退餐</button>
     </div>
-    <input type="text" class="note-input" placeholder="備註（選填，例如：不吃蛋）" value="${escapeHtml(note)}" data-action="note-input" data-date="${date}" data-meal="${meal}" ${status?'':'disabled'}>
+    <input type="text" class="note-input" placeholder="備註（選填，例如：不吃蛋）" value="${escapeHtml(note)}" data-action="draft-note" data-date="${date}" data-meal="${meal}" ${status?'':'disabled'}>
+    <div class="submit-row ${dirty?'dirty':''}">
+      <span class="submit-status">${escapeHtml(statusLine)}</span>
+      <button type="button" class="btn btn-primary btn-submit-choice" data-action="submit-choice" data-date="${date}" data-meal="${meal}" ${dirty?'':'disabled'}>確定送出</button>
+    </div>
     ${screenshot?`<div class="shot-zone" data-action="view-shot" data-src="${screenshot}"><img src="${screenshot}">佐證截圖（點擊放大）</div>`:''}
   </div>`;
 }
@@ -981,6 +1003,7 @@ function renderStudentEventCard(ev){
 document.getElementById('content').addEventListener('click', async (ev)=>{
   const el=ev.target.closest('[data-action]'); if(!el) return;
   const action=el.dataset.action, date=el.dataset.date, meal=el.dataset.meal, eventId=el.dataset.event;
+  try{
 
   if(action==='toggle'){
     if(ev.target.closest('.date-delete')||ev.target.closest('.copy-last-btn')) return;
@@ -1005,22 +1028,45 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     }
     await touchEntry(date);
   }
-  else if(action==='choose-status'){
+  else if(action==='pick-status'){
+    // 同學點選按鈕只更新「本機暫存」，畫面會立刻反白，但還沒送到伺服器，
+    // 要等按下「確定送出」才會真的寫入 Firestore。
     const status=el.dataset.status;
-    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
+    const key=date+'|'+meal;
     const list = meal==='lunch'?lunchChoice:dinnerChoice;
     const existing=(list[date]||[]).find(o=>o.id===studentId);
+    const savedStatus = existing?existing.status:'';
+    const savedNote = existing?(existing.note||''):'';
+    const current = draftChoice[key] || {status:savedStatus, note:savedNote};
+    const newStatus = current.status===status ? '' : status; // 再點一次同一個 = 取消選擇
+    draftChoice[key] = {status:newStatus, note:current.note};
+    if(draftChoice[key].status===savedStatus && draftChoice[key].note===savedNote){ delete draftChoice[key]; }
+    render();
+  }
+  else if(action==='submit-choice'){
+    const key=date+'|'+meal;
+    const list = meal==='lunch'?lunchChoice:dinnerChoice;
+    const existing=(list[date]||[]).find(o=>o.id===studentId);
+    const savedStatus = existing?existing.status:'';
+    const savedNote = existing?(existing.note||''):'';
+    const draft=draftChoice[key];
+    const status = draft ? draft.status : savedStatus;
+    const noteInput=document.querySelector(`input[data-action="draft-note"][data-date="${date}"][data-meal="${meal}"]`);
+    const note = noteInput ? noteInput.value.trim() : (draft ? draft.note : savedNote);
+    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const ref=doc(db,'entries',date,collName,studentId);
-    if(existing && existing.status===status){
+    if(!status){
       await deleteDoc(ref);
-      showToast('已取消選擇');
+      showToast('已送出：取消訂餐選擇');
     } else {
       await setDoc(ref, {
-        seatNo:studentId, studentId, name:studentId, status,
-        note: existing?(existing.note||''):'', date, updatedBy:identity(), updatedAt:new Date().toISOString()
-      }, {merge:true});
-      showToast(status==='cancel'?'已標記退餐':(status==='meat'?'已選擇葷食':'已選擇素食'));
+        seatNo:studentId, studentId, name:studentId, status, note,
+        date, updatedBy:identity(), updatedAt:new Date().toISOString()
+      });
+      showToast('已送出：'+(STATUS_LABEL[status]||''));
     }
+    delete draftChoice[key];
+    render();
   }
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
   else if(action==='copy-last-week'){ ev.stopPropagation(); await applyLastWeekTo(date); }
@@ -1067,9 +1113,15 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     await addEventCustomName(eventId, name);
     input.value='';
   }
+
+  }catch(err){
+    console.error(err);
+    showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
+  }
 });
 
 document.getElementById('content').addEventListener('keydown', async (ev)=>{
+  try{
   if(ev.target.dataset.action==='name-input' && ev.key==='Enter'){
     ev.preventDefault();
     const date=ev.target.dataset.date, meal=ev.target.dataset.meal, name=ev.target.value.trim();
@@ -1087,13 +1139,27 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
     await addEventCustomName(eventId, name);
     ev.target.value='';
   }
+  }catch(err){
+    console.error(err);
+    showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
+  }
 });
 
 document.getElementById('content').addEventListener('change', async (ev)=>{
-  if(ev.target.dataset.action==='note-input'){
+  try{
+  if(ev.target.dataset.action==='draft-note'){
+    // 備註只更新本機暫存，要按「確定送出」才會真正寫入 Firestore
     const date=ev.target.dataset.date, meal=ev.target.dataset.meal;
-    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
-    await setDoc(doc(db,'entries',date,collName,studentId), {note:ev.target.value, updatedBy:identity(), updatedAt:new Date().toISOString()}, {merge:true});
+    const key=date+'|'+meal;
+    const list = meal==='lunch'?lunchChoice:dinnerChoice;
+    const existing=(list[date]||[]).find(o=>o.id===studentId);
+    const savedStatus = existing?existing.status:'';
+    const savedNote = existing?(existing.note||''):'';
+    const current = draftChoice[key] || {status:savedStatus, note:savedNote};
+    current.note = ev.target.value;
+    draftChoice[key]=current;
+    if(draftChoice[key].status===savedStatus && draftChoice[key].note===savedNote){ delete draftChoice[key]; }
+    render();
   }
   else if(ev.target.dataset.action==='item-qty'){
     await setItemQty(ev.target.dataset.event, ev.target.dataset.label, ev.target.dataset.item, ev.target.value);
@@ -1101,6 +1167,10 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
   else if(ev.target.matches('input[type=file]')){
     const key=ev.target.dataset.fileFor; const parts=key.split('-'); const meal=parts.pop(); const date=parts.join('-');
     const file=ev.target.files[0]; await handleFile(date,meal,file); ev.target.value='';
+  }
+  }catch(err){
+    console.error(err);
+    showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
   }
 });
 
