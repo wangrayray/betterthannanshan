@@ -17,13 +17,13 @@
 </script>
 <style>
   :root{
-    --bg:#EDF0E6; --paper:#FFFFFF; --paper-soft:#F6F7F1;
-    --ink:#232B24; --ink-soft:#5B655C; --line:#DDE2D6;
-    --lunch:#C97B3D; --lunch-bg:#FBF0E3;
-    --dinner:#35586A; --dinner-bg:#E7EEF1;
-    --danger:#B4453B; --danger-bg:#F7E7E5;
-    --mine:#2E7D46; --outside:#6B4FA0; --outside-bg:#F0EBF7;
-    --radius:16px; --shadow:0 1px 2px rgba(35,43,36,.06),0 6px 20px rgba(35,43,36,.06);
+    --bg:#E7F0F8; --paper:#FFFFFF; --paper-soft:#F1F6FB;
+    --ink:#14304A; --ink-soft:#52708C; --line:#CFE0EE;
+    --lunch:#2E8BC0; --lunch-bg:#E4F2FA;
+    --dinner:#14304A; --dinner-bg:#E1E9F1;
+    --danger:#C0392B; --danger-bg:#FBE7E4;
+    --mine:#0E8388; --outside:#3D5AFE; --outside-bg:#E8EBFC;
+    --radius:16px; --shadow:0 1px 2px rgba(20,48,74,.06),0 6px 20px rgba(20,48,74,.06);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -180,7 +180,7 @@
   .outside-total{font-size:13px;font-weight:700;color:var(--outside);margin-top:4px;}
   .paid-check{display:flex;align-items:center;margin-right:2px;flex-shrink:0;}
   .paid-check input{width:17px;height:17px;cursor:pointer;accent-color:var(--mine);}
-  .outside-row.paid{background:#EAF6EC;}
+  .outside-row.paid{background:#E2F5F5;}
   .paid-tag{color:var(--mine);font-weight:700;}
   .rec-section{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);}
   .rec-search-row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px;}
@@ -215,7 +215,7 @@
 
   .empty-state{text-align:center;color:var(--ink-soft);font-size:13px;padding:50px 20px;background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);}
 
-  .modal-bg{position:fixed;inset:0;background:rgba(35,43,36,.75);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;overflow-y:auto;}
+  .modal-bg{position:fixed;inset:0;background:rgba(10,26,42,.75);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;overflow-y:auto;}
   .modal-bg.show{display:flex;}
   .modal-bg img{max-width:100%;max-height:85vh;border-radius:10px;}
 
@@ -248,11 +248,11 @@
 
   <div class="header">
     <svg class="logo" viewBox="0 0 48 48" fill="none">
-      <rect x="4" y="14" width="40" height="28" rx="6" fill="#F6F7F1" stroke="#232B24" stroke-width="2"/>
-      <line x1="24" y1="14" x2="24" y2="42" stroke="#DDE2D6" stroke-width="2"/>
-      <circle cx="15" cy="27" r="5" fill="#C97B3D"/>
-      <rect x="30" y="21" width="10" height="12" rx="3" fill="#35586A"/>
-      <path d="M4 14 L24 4 L44 14" stroke="#232B24" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <rect x="4" y="14" width="40" height="28" rx="6" fill="#F1F6FB" stroke="#14304A" stroke-width="2"/>
+      <line x1="24" y1="14" x2="24" y2="42" stroke="#CFE0EE" stroke-width="2"/>
+      <circle cx="15" cy="27" r="5" fill="#2E8BC0"/>
+      <rect x="30" y="21" width="10" height="12" rx="3" fill="#14304A"/>
+      <path d="M4 14 L24 4 L44 14" stroke="#14304A" stroke-width="2" fill="none" stroke-linejoin="round"/>
     </svg>
     <div><h1>班務系統</h1><p>退餐紀錄・外食訂購（Firebase 版）</p></div>
   </div>
@@ -762,12 +762,15 @@ async function copyChoiceFromPrevWeek(dateStr){
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
   await copyChoiceBetweenDates(prevKey, dateStr);
 }
-async function applyLastWeekTo(dateStr){
+async function applyLastWeekMealTo(dateStr, meal){
+  // 伙委專用（分午餐/晚餐各自獨立）：找「往前推 7 天」那個日期的這個餐別紀錄，複製過來。
+  const label = meal==='lunch'?'午餐':'晚餐';
+  const list = meal==='lunch'?lunchChoice:dinnerChoice;
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
-  if(!(lunchChoice[prevKey]||dinnerChoice[prevKey])){ showToast('找不到上週同星期的資料'); return; }
-  await copyChoiceBetweenDates(prevKey, dateStr);
+  if(!(list[prevKey]&&list[prevKey].length)){ showToast('找不到上週同星期的'+label+'資料'); return; }
+  await copyMealBetweenDates(prevKey, dateStr, meal);
   await touchEntry(dateStr);
-  showToast('已套用上週同星期資料');
+  showToast('已套用上週同星期的'+label+'資料');
 }
 async function copyMealBetweenDates(fromKey, toDateStr, meal){
   const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
@@ -1184,7 +1187,7 @@ function renderStaffDateCard(date){
       </div>
     </div>
     <div class="date-foot">
-      <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button><button class="copy-last-btn" data-action="copy-last-week" data-date="${date}">套用上週同星期</button></div>
+      <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button></div>
       <span class="edit-tag">${e.lastEditBy?'最後編輯：'+escapeHtml(e.lastEditBy)+' · '+fmtTime(e.lastEditAt):''}</span>
     </div>
   </div>`;
@@ -1207,7 +1210,7 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
   const screenshot = m.screenshot || null;
   return `
   <div class="meal-card ${meal}">
-    <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button></div>
+    <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
     <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人・尚未選擇 <b>${counts.unset}</b> 人</div>
     <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 未選）</div>
     <div class="number-grid">${grid}</div>
@@ -1494,8 +1497,8 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   }
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
   else if(action==='delete-week'){ ev.stopPropagation(); await deleteWeek(el.dataset.week); }
-  else if(action==='copy-last-week'){ ev.stopPropagation(); await applyLastWeekTo(date); }
   else if(action==='copy-prev-day-meal'){ ev.stopPropagation(); await applyPrevDayTo(date, meal); }
+  else if(action==='copy-last-week-meal'){ ev.stopPropagation(); await applyLastWeekMealTo(date, meal); }
   else if(action==='add-name'){
     const input=document.querySelector(`input[data-action="name-input"][data-date="${date}"][data-meal="${meal}"]`);
     const name=input.value.trim(); if(!name) return;
