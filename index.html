@@ -488,26 +488,34 @@ function applyRoleUI(){
 function subscribeAll(){
   teardownListeners();
   const noop=()=>{};
+  // 除錯用：這些監聽器如果連線/讀取失敗，直接印出錯誤並跳 toast，
+  // 這樣才不會發生「資料寫進去了但畫面永遠不會更新」卻完全看不出原因的狀況。
+  function subErr(label){
+    return (err)=>{
+      console.error('[監聽失敗：'+label+']', err);
+      showToast('資料讀取失敗（'+label+'）：'+(err && (err.message||err.code) || '未知錯誤'));
+    };
+  }
 
   unsubs.push(onSnapshot(doc(db,'settings','config'), snap=>{
     if(snap.exists()) settings=Object.assign({rosterSize:49,includeTeacher:true}, snap.data());
     render();
-  }, noop));
+  }, subErr('settings')));
 
   unsubs.push(onSnapshot(collection(db,'students'), snap=>{
     studentsRoster={}; snap.forEach(d=>studentsRoster[d.id]=d.data()); render();
-  }, noop));
+  }, subErr('students')));
 
   unsubs.push(onSnapshot(collection(db,'staff'), snap=>{
     staffList={}; snap.forEach(d=>staffList[d.id]=d.data());
-  }, noop)); // 同學沒有讀取權限會出錯，noop 忽略即可
+  }, noop)); // 同學本來就沒有讀取權限，這裡預期會失敗，用 noop 忽略即可
 
   unsubs.push(onSnapshot(collection(db,'eventCoordinators'), snap=>{
     eventCoordinators={}; snap.forEach(d=>eventCoordinators[d.id]=d.data());
     applyRoleUI();
     renderCoordinatorList();
     render();
-  }, noop));
+  }, subErr('eventCoordinators')));
 
   unsubs.push(onSnapshot(collection(db,'entries'), snap=>{
     snap.docChanges().forEach(ch=>{
@@ -515,19 +523,19 @@ function subscribeAll(){
       else entries[ch.doc.id]=Object.assign({date:ch.doc.id}, ch.doc.data());
     });
     render();
-  }, noop));
+  }, subErr('entries')));
 
   unsubs.push(onSnapshot(collectionGroup(db,'lunch_choice'), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
     lunchChoice=grouped; render();
-  }, noop));
+  }, subErr('lunch_choice')));
 
   unsubs.push(onSnapshot(collectionGroup(db,'dinner_choice'), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
     dinnerChoice=grouped; render();
-  }, noop));
+  }, subErr('dinner_choice')));
 
   unsubs.push(onSnapshot(collection(db,'events'), snap=>{
     snap.docChanges().forEach(ch=>{
@@ -535,19 +543,19 @@ function subscribeAll(){
       else events[ch.doc.id]=Object.assign({id:ch.doc.id}, ch.doc.data());
     });
     render();
-  }, noop));
+  }, subErr('events')));
 
   unsubs.push(onSnapshot(collectionGroup(db,'menu'), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
     eventMenu=grouped; render();
-  }, noop));
+  }, subErr('menu')));
 
   unsubs.push(onSnapshot(collectionGroup(db,'orders'), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
     eventOrders=grouped; render();
-  }, noop));
+  }, subErr('orders')));
 }
 
 // ============================================================
