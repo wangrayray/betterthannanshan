@@ -203,7 +203,7 @@
 <div class="modal-bg" id="settings-bg">
   <div class="panel">
     <h3>座號設定</h3>
-    <div class="sub">此設定所有伙委共用，用於退餐名單的快速點選格。儲存後會自動同步全班學號名冊（students collection），同學才能用學號登入並寫入自己的資料。</div>
+    <div class="sub">此設定所有伙委共用，用於退餐名單的快速點選格。儲存後會自動同步全班座號名冊（students collection），同學才能用座號登入並寫入自己的資料。</div>
     <div class="row"><label>班級總座號數（例如 49）</label><input type="number" id="set-roster" min="1" max="99" value="49"></div>
     <div class="row check"><input type="checkbox" id="set-teacher" checked><label for="set-teacher">包含「師」座位</label></div>
     <div class="row"><label>新增其他伙委（輸入對方已註冊過的 Email）</label>
@@ -211,6 +211,14 @@
         <input type="text" id="set-staff-email" placeholder="name@example.com" style="flex:1;">
         <button class="btn btn-ghost" id="add-staff-btn" type="button">新增</button>
       </div>
+    </div>
+    <div class="row">
+      <label>外食訂購人（輸入座號，效期 14 天，到期自動失效）</label>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="set-coordinator-seat" placeholder="座號，例如 05" style="flex:1;">
+        <button class="btn btn-ghost" id="add-coordinator-btn" type="button">設定</button>
+      </div>
+      <div class="chips" id="coordinator-list" style="margin-top:8px;"></div>
     </div>
     <div class="actions"><button class="btn btn-ghost" id="settings-cancel">取消</button><button class="btn btn-primary" id="settings-save">儲存</button></div>
   </div>
@@ -229,8 +237,8 @@
     </div>
     <div class="role-block">
       <h4>🎓 同學登入</h4>
-      <div class="sub" style="margin-bottom:8px;">用你的學號登入，第一次登入會自動建立帳號。</div>
-      <input type="text" id="student-id-input" placeholder="學號" autocomplete="username">
+      <div class="sub" style="margin-bottom:8px;">用你的座號登入（跟退餐點選格一樣，例如 05、師），第一次登入會自動建立帳號。</div>
+      <input type="text" id="student-id-input" placeholder="座號" autocomplete="username">
       <input type="password" id="student-pw-input" placeholder="密碼（至少 6 碼，請牢記）" autocomplete="current-password">
       <button class="btn btn-outside" id="student-login-btn">登入 / 註冊</button>
     </div>
@@ -257,7 +265,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
-  collection, collectionGroup, getDocs, onSnapshot, writeBatch
+  collection, collectionGroup, getDocs, onSnapshot, writeBatch, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // 你的 Firebase 專案設定（已依你提供的內容填入）
@@ -271,9 +279,12 @@ const firebaseConfig = {
   measurementId: "G-KHEHPPQJPT"
 };
 
-// 學號登入用的「假網域」，不需要是真實網域，只要跟下方 firestore.rules 邏輯一致即可。
-// 如果要換成別的字串，這裡改掉就好，不用改 rules（rules 只看 @ 前面的學號）。
+// 座號登入用的「假網域」，不需要是真實網域，只要跟下方 firestore.rules 邏輯一致即可。
+// 如果要換成別的字串，這裡改掉就好，不用改 rules（rules 只看 @ 前面的座號）。
 const CLASS_DOMAIN = 'yourclass.local';
+
+// 外食訂購人權限的有效天數
+const COORDINATOR_DAYS = 14;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -292,6 +303,7 @@ let eventOrders = {};   // eventId -> [{id,studentId,name,items,updatedAt}]
 let settings = { rosterSize:49, includeTeacher:true };
 let studentsRoster = {}; // studentId -> {name}
 let staffList = {};      // email -> {name}
+let eventCoordinators = {}; // seatNo -> {expiresAt,grantedBy,grantedAt}
 
 let collapsedDates = new Set();
 let role = '';          // 'staff' | 'student' | ''
@@ -304,7 +316,27 @@ let unsubs = [];
 
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function uid(){ return Math.random().toString(36).slice(2,9); }
-function identity(){ return role==='staff' ? ('伙委'+(staffName?'・'+staffName:'')) : ('學號'+studentId); }
+function normalizeSeatNo(v){
+  v = String(v||'').trim();
+  if(!v) return v;
+  if(v==='師' || v.toLowerCase()==='teacher') return '師';
+  const n = Number(v);
+  if(!isNaN(n) && n>0) return String(Math.floor(n)).padStart(2,'0');
+  return v;
+}
+function myCoordinatorDoc(){ return role==='student' ? eventCoordinators[studentId] : null; }
+function isCoordinatorActive(){
+  const d = myCoordinatorDoc();
+  if(!d || !d.expiresAt) return false;
+  const exp = d.expiresAt.toDate ? d.expiresAt.toDate() : new Date(d.expiresAt);
+  return exp.getTime() > Date.now();
+}
+function canManageEvents(){ return role==='staff' || isCoordinatorActive(); }
+function identity(){
+  if(role==='staff') return '伙委'+(staffName?'・'+staffName:'');
+  if(isCoordinatorActive()) return '外食訂購人・座號'+studentId;
+  return '座號'+studentId;
+}
 function parseDate(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
 function formatMD(d){ return (d.getMonth()+1)+'/'+d.getDate(); }
 function getMonday(d){ const day=d.getDay(); const diff=day===0?-6:1-day; const mon=new Date(d); mon.setDate(d.getDate()+diff); mon.setHours(0,0,0,0); return mon; }
@@ -334,7 +366,7 @@ function authErrMsg(err){
     'auth/wrong-password':'密碼錯誤',
     'auth/invalid-credential':'帳號或密碼錯誤',
     'auth/weak-password':'密碼至少需要 6 碼',
-    'auth/invalid-email':'Email 或學號格式錯誤',
+    'auth/invalid-email':'Email 或座號格式錯誤',
     'auth/email-already-in-use':'帳號已存在，請確認密碼是否正確',
     'auth/too-many-requests':'嘗試次數過多，請稍後再試'
   };
@@ -366,9 +398,10 @@ document.getElementById('staff-login-btn').addEventListener('click', async ()=>{
   await emailPasswordFlow(email, pw);
 });
 document.getElementById('student-login-btn').addEventListener('click', async ()=>{
-  const sid=document.getElementById('student-id-input').value.trim();
+  const raw=document.getElementById('student-id-input').value.trim();
   const pw=document.getElementById('student-pw-input').value;
-  if(!sid||!pw){ showToast('請輸入學號與密碼'); return; }
+  if(!raw||!pw){ showToast('請輸入座號與密碼'); return; }
+  const sid=normalizeSeatNo(raw);
   await emailPasswordFlow(sid+'@'+CLASS_DOMAIN, pw);
 });
 document.getElementById('who-change-btn').addEventListener('click', async ()=>{
@@ -400,7 +433,7 @@ function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); un
 function teardownState(){
   teardownListeners();
   entries={}; lunchOff={}; dinnerOff={}; events={}; eventMenu={}; eventOrders={};
-  studentsRoster={}; staffList={};
+  studentsRoster={}; staffList={}; eventCoordinators={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
 }
@@ -418,7 +451,10 @@ onAuthStateChanged(auth, async (user)=>{
 });
 
 function applyRoleUI(){
-  document.getElementById('who-label').textContent = role==='staff' ? ('伙委'+(staffName?'・'+staffName:'')) : (role==='student' ? ('同學・學號 '+studentId) : '尚未登入');
+  let label = '尚未登入';
+  if(role==='staff') label = '伙委'+(staffName?'・'+staffName:'');
+  else if(role==='student') label = (isCoordinatorActive()?'外食訂購人':'同學')+'・座號 '+studentId;
+  document.getElementById('who-label').textContent = label;
   document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-block' : 'none';
   document.getElementById('tab-bar').style.display = role ? 'flex' : 'none';
 }
@@ -442,6 +478,13 @@ function subscribeAll(){
   unsubs.push(onSnapshot(collection(db,'staff'), snap=>{
     staffList={}; snap.forEach(d=>staffList[d.id]=d.data());
   }, noop)); // 同學沒有讀取權限會出錯，noop 忽略即可
+
+  unsubs.push(onSnapshot(collection(db,'eventCoordinators'), snap=>{
+    eventCoordinators={}; snap.forEach(d=>eventCoordinators[d.id]=d.data());
+    applyRoleUI();
+    renderCoordinatorList();
+    render();
+  }, noop));
 
   unsubs.push(onSnapshot(collection(db,'entries'), snap=>{
     snap.docChanges().forEach(ch=>{
@@ -667,7 +710,15 @@ function render(){
 
 function pendingRosterNote(){
   if(role==='student' && !studentsRoster[studentId]){
-    return `<div class="pending-note">你的學號「${escapeHtml(studentId)}」尚未列入名冊，退餐/訂購資料可能無法儲存，請聯絡伙委確認座號設定。</div>`;
+    return `<div class="pending-note">你的座號「${escapeHtml(studentId)}」尚未列入名冊，退餐/訂購資料可能無法儲存，請聯絡伙委確認座號設定。</div>`;
+  }
+  return '';
+}
+function coordinatorNote(){
+  if(role==='student' && isCoordinatorActive()){
+    const d=myCoordinatorDoc();
+    const exp = d.expiresAt.toDate ? d.expiresAt.toDate() : new Date(d.expiresAt);
+    return `<div class="pending-note" style="color:var(--outside);background:var(--outside-bg);">你目前擁有「外食訂購人」權限，可以建立與管理外食訂購活動，效期至 ${exp.getMonth()+1}/${exp.getDate()}。</div>`;
   }
   return '';
 }
@@ -783,12 +834,13 @@ function renderStudentMealCard(date, meal, label, m, offList){
 function renderEventTab(){
   const content=document.getElementById('content');
   const list=Object.values(events).sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+  const manage = canManageEvents();
 
   let addHtml='';
-  if(role==='staff'){
+  if(manage){
     addHtml = `<div class="add-bar"><label for="event-title-input">活動名稱</label><input type="text" id="event-title-input" placeholder="例如：8/10 雞排店合購"><button class="btn btn-outside" id="create-event-btn">＋新增外食訂購活動</button></div>`;
   }
-  const noteHtml = pendingRosterNote();
+  const noteHtml = pendingRosterNote() + coordinatorNote();
 
   const totalAll = list.reduce((s,ev)=>s+eventTotal(ev),0);
   const overviewHtml = `<div class="overview">
@@ -797,12 +849,12 @@ function renderEventTab(){
   </div>`;
 
   if(list.length===0){
-    content.innerHTML = addHtml + noteHtml + overviewHtml + `<div class="empty-state">${role==='staff'?'還沒有外食訂購活動，建立一個開始收單吧':'目前沒有進行中的外食訂購活動'}</div>`;
+    content.innerHTML = addHtml + noteHtml + overviewHtml + `<div class="empty-state">${manage?'還沒有外食訂購活動，建立一個開始收單吧':'目前沒有進行中的外食訂購活動'}</div>`;
     return;
   }
 
   let html = addHtml + noteHtml + overviewHtml;
-  list.forEach(ev=>{ html += role==='staff' ? renderStaffEventCard(ev) : renderStudentEventCard(ev); });
+  list.forEach(ev=>{ html += manage ? renderStaffEventCard(ev) : renderStudentEventCard(ev); });
   content.innerHTML = html;
 }
 
@@ -1013,9 +1065,36 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
 document.getElementById('modal-bg').addEventListener('click',()=>document.getElementById('modal-bg').classList.remove('show'));
 
 // settings
+function renderCoordinatorList(){
+  const el=document.getElementById('coordinator-list');
+  if(!el) return;
+  const items=Object.entries(eventCoordinators);
+  if(items.length===0){ el.innerHTML='<div class="other-label">目前沒有外食訂購人</div>'; return; }
+  el.innerHTML = items.map(([seat,data])=>{
+    const exp = data.expiresAt ? (data.expiresAt.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt)) : null;
+    const active = exp && exp.getTime() > Date.now();
+    const expStr = exp ? (exp.getMonth()+1)+'/'+exp.getDate() : '—';
+    return `<span class="name-chip">${escapeHtml(seat)}（至 ${expStr}${active?'':'・已過期'}）<button data-remove-seat="${escapeHtml(seat)}">×</button></span>`;
+  }).join('');
+}
+document.getElementById('coordinator-list').addEventListener('click', async (ev)=>{
+  const btn=ev.target.closest('[data-remove-seat]'); if(!btn) return;
+  await deleteDoc(doc(db,'eventCoordinators',btn.dataset.removeSeat));
+  showToast('已移除外食訂購人權限');
+});
+document.getElementById('add-coordinator-btn').addEventListener('click', async ()=>{
+  const raw=document.getElementById('set-coordinator-seat').value.trim();
+  if(!raw){ showToast('請輸入座號'); return; }
+  const seat=normalizeSeatNo(raw);
+  const expiresAt = Timestamp.fromDate(new Date(Date.now() + COORDINATOR_DAYS*24*60*60*1000));
+  await setDoc(doc(db,'eventCoordinators',seat), { seat, grantedBy:identity(), grantedAt:new Date().toISOString(), expiresAt }, {merge:true});
+  document.getElementById('set-coordinator-seat').value='';
+  showToast('已設定為外食訂購人，'+COORDINATOR_DAYS+' 天後自動失效');
+});
 document.getElementById('gear-btn').addEventListener('click',()=>{
   document.getElementById('set-roster').value=settings.rosterSize;
   document.getElementById('set-teacher').checked=settings.includeTeacher;
+  renderCoordinatorList();
   document.getElementById('settings-bg').classList.add('show');
 });
 document.getElementById('settings-cancel').addEventListener('click',()=>document.getElementById('settings-bg').classList.remove('show'));
