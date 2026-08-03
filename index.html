@@ -165,6 +165,8 @@
   .rec-search-row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px;}
   .rec-search-row .rec-search-input{flex:1;min-width:140px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;background:#fff;}
   .rec-search-results{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+  .rec-manual-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .rec-manual-row .rec-manual-input{flex:1;min-width:140px;font-family:inherit;border:1px dashed var(--line);border-radius:8px;padding:7px 9px;font-size:12.5px;background:#fff;}
   .rec-result-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px dashed var(--outside);border-radius:8px;padding:7px 10px;}
   .rec-list{display:flex;flex-direction:column;gap:6px;}
   .rec-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border-radius:8px;padding:7px 10px;flex-wrap:wrap;}
@@ -897,21 +899,36 @@ async function searchPlaceByName(qStr){
   const data = await res.json();
   return (data||[]).map(r=>({ name:(r.display_name||'').split(',')[0].trim(), address:r.display_name||'', lat:Number(r.lat), lon:Number(r.lon) }));
 }
-// 每個人（伙委用 email、同學用座號）對同一筆推薦只能投一票，
-// 用 voters 這個 map 記錄「誰投過」，票數用 voters 的筆數計算，
-// 而不是單純每次點擊都 +1，這樣才不會有人一直按就一直累積次數。
+// 每個人（伙委用 email、同學用座號）在同一個活動裡「限推薦一家餐廳」，
+// 用 voters 這個 map 記錄「誰投過」，票數用 voters 的筆數計算。
+// 如果改推薦別家，會自動把原本那家的票拿掉、換到新的一家，不是每家都能各投一次。
 function myVoterKey(){
   return role==='staff' ? ('staff_'+simpleHash(myEmail||'')) : ('student_'+(studentId||''));
+}
+function myCurrentRecommendation(eventId){
+  const voterKey=myVoterKey();
+  return (eventRecommendations[eventId]||[]).find(r=>r.voters && r.voters[voterKey]) || null;
+}
+async function removeMyVoteFrom(eventId, rec, voterKey){
+  const remaining = Object.keys(rec.voters||{}).filter(k=>k!==voterKey);
+  if(remaining.length===0){
+    await deleteDoc(doc(db,'events',eventId,'recommendations',rec.id));
+  } else {
+    await updateDoc(doc(db,'events',eventId,'recommendations',rec.id), {['voters.'+voterKey]: deleteField()});
+  }
 }
 async function recommendRestaurant(eventId, name, address, lat, lon){
   name=(name||'').trim(); address=(address||'').trim();
   if(!name){ showToast('請輸入或選擇餐廳名稱'); return; }
   const recId = 'r'+simpleHash(name.toLowerCase()+'|'+address.toLowerCase());
   const voterKey = myVoterKey();
-  const existing = (eventRecommendations[eventId]||[]).find(r=>r.id===recId);
-  if(existing && existing.voters && existing.voters[voterKey]){
-    showToast('你已經推薦過「'+name+'」了，一人限投一票');
+  const current = myCurrentRecommendation(eventId);
+  if(current && current.id===recId){
+    showToast('你已經推薦過「'+name+'」了');
     return;
+  }
+  if(current){
+    await removeMyVoteFrom(eventId, current, voterKey);
   }
   await setDoc(doc(db,'events',eventId,'recommendations',recId), {
     name, address, lat: (lat===undefined||lat===null||isNaN(lat))?null:lat, lon:(lon===undefined||lon===null||isNaN(lon))?null:lon,
@@ -919,7 +936,7 @@ async function recommendRestaurant(eventId, name, address, lat, lon){
     voters: { [voterKey]: { by: identity(), at: new Date().toISOString() } },
     lastRecommendedBy: identity(), lastRecommendedAt: new Date().toISOString()
   }, {merge:true});
-  showToast('已推薦「'+name+'」');
+  showToast(current ? '已改為推薦「'+name+'」' : '已推薦「'+name+'」');
 }
 async function removeRecommendation(eventId, recId){
   await deleteDoc(doc(db,'events',eventId,'recommendations',recId));
@@ -1143,13 +1160,17 @@ function renderRecommendSection(eventId, canDelete){
 
   return `
   <div class="rec-section">
-    <div class="section-label">🍽️ 餐廳推薦（找附近餐廳或搜尋店名，推薦後同名同地址會自動累計次數，每人限投一票）</div>
+    <div class="section-label">🍽️ 餐廳推薦（找附近餐廳或搜尋店名，推薦後同名同地址會自動累計次數，每人限推薦一家，改推薦別家會自動換掉原本那家）</div>
     <div class="rec-search-row">
       <button type="button" class="btn btn-ghost" data-action="find-nearby" data-event="${eventId}">📍 找我附近的餐廳</button>
       <input type="text" class="rec-search-input" placeholder="或輸入店名搜尋" data-action="rec-search-input" data-event="${eventId}">
       <button type="button" class="btn btn-ghost" data-action="search-restaurant-name" data-event="${eventId}">搜尋</button>
     </div>
     ${resultsHtml}
+    <div class="rec-manual-row">
+      <input type="text" class="rec-manual-input" placeholder="地圖上找不到？直接輸入餐廳名稱推薦" data-action="rec-manual-input" data-event="${eventId}">
+      <button type="button" class="btn btn-outside" data-action="recommend-manual" data-event="${eventId}">直接推薦</button>
+    </div>
     ${listHtml}
   </div>`;
 }
@@ -1394,6 +1415,15 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const r=(searchResults[eventId]||[])[idx];
     if(!r) return;
     await recommendRestaurant(eventId, r.name, r.address, r.lat, r.lon);
+    delete searchResults[eventId];
+    render();
+  }
+  else if(action==='recommend-manual'){
+    const input=document.querySelector(`input[data-action="rec-manual-input"][data-event="${eventId}"]`);
+    const name=input.value.trim();
+    if(!name){ showToast('請輸入餐廳名稱'); return; }
+    await recommendRestaurant(eventId, name, '', null, null);
+    input.value='';
     delete searchResults[eventId];
     render();
   }
