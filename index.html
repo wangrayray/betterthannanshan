@@ -271,20 +271,22 @@
 <div class="modal-bg show" id="role-bg">
   <div class="panel">
     <h3>登入</h3>
-    <div class="sub">使用 Firebase 帳號登入。第一次登入時，系統會用你輸入的密碼自動建立新帳號——請務必記住密碼，之後無法在前端重設。</div>
+    <div class="sub">使用 Firebase 帳號登入。如果密碼輸入錯誤，系統會直接擋下並顯示錯誤，不會誤建立新帳號；第一次使用請按「還沒有帳號？註冊新帳號」——請務必記住密碼，之後無法在前端重設。</div>
     <div class="role-block">
       <h4>👩‍🍳 伙委登入</h4>
-      <div class="sub" style="margin-bottom:8px;">請使用你的個人 Email。首次登入建立帳號後，需請管理員在 Firestore 的 staff collection 新增你的權限才能進入伙委端。</div>
+      <div class="sub" style="margin-bottom:8px;">請使用你的個人 Email。註冊帳號後，需請管理員在 Firestore 的 staff collection 新增你的權限才能進入伙委端。</div>
       <input type="text" id="staff-email-input" placeholder="Email" autocomplete="username">
       <input type="password" id="staff-pw-input" placeholder="密碼（至少 6 碼）" autocomplete="current-password">
-      <button class="btn btn-primary" id="staff-login-btn">登入 / 註冊</button>
+      <button class="btn btn-primary" id="staff-login-btn">登入</button>
+      <button class="btn btn-ghost" type="button" id="staff-register-btn">還沒有帳號？註冊新帳號</button>
     </div>
     <div class="role-block">
       <h4>🎓 同學登入</h4>
-      <div class="sub" style="margin-bottom:8px;">用你的座號登入（跟退餐點選格一樣，例如 05、師），第一次登入會自動建立帳號。</div>
+      <div class="sub" style="margin-bottom:8px;">用你的座號登入（跟退餐點選格一樣，例如 05、師）。</div>
       <input type="text" id="student-id-input" placeholder="座號" autocomplete="username">
       <input type="password" id="student-pw-input" placeholder="密碼（至少 6 碼，請牢記）" autocomplete="current-password">
-      <button class="btn btn-outside" id="student-login-btn">登入 / 註冊</button>
+      <button class="btn btn-outside" id="student-login-btn">登入</button>
+      <button class="btn btn-ghost" type="button" id="student-register-btn">還沒有帳號？註冊新帳號</button>
     </div>
   </div>
 </div>
@@ -414,31 +416,35 @@ function rosterLabels(){
 // ============================================================
 function authErrMsg(err){
   const m={
-    'auth/wrong-password':'密碼錯誤',
+    'auth/wrong-password':'帳號或密碼錯誤',
     'auth/invalid-credential':'帳號或密碼錯誤',
+    'auth/user-not-found':'帳號或密碼錯誤',
     'auth/weak-password':'密碼至少需要 6 碼',
     'auth/invalid-email':'Email 或座號格式錯誤',
-    'auth/email-already-in-use':'帳號已存在，請確認密碼是否正確',
+    'auth/email-already-in-use':'這個帳號已經註冊過了，請改用「登入」；如果忘記密碼，請聯絡管理員協助重設',
     'auth/too-many-requests':'嘗試次數過多，請稍後再試'
   };
   return m[err.code] || err.message;
 }
 
-async function emailPasswordFlow(email, password){
+// 登入跟註冊是兩個完全分開的動作：密碼輸入錯誤（不管是帳號不存在還是密碼打錯，
+// Firebase 基於安全考量兩者會回傳同一種錯誤，前端無法區分）一律直接擋下顯示錯誤，
+// 不會再跳出「要不要建立新帳號」，避免有人誤觸建立到不該建立的帳號。
+// 要註冊新帳號一定要明確按下「還沒有帳號？註冊新帳號」才會執行。
+async function loginFlow(email, password){
   try{
     await signInWithEmailAndPassword(auth, email, password);
   }catch(err){
-    if(err.code==='auth/user-not-found' || err.code==='auth/invalid-credential'){
-      const ok = await showConfirm('查無此帳號，是否要用你輸入的密碼建立新帳號？');
-      if(!ok) return;
-      try{
-        await createUserWithEmailAndPassword(auth, email, password);
-      }catch(err2){
-        showToast('建立帳號失敗：'+authErrMsg(err2));
-      }
-    } else {
-      showToast('登入失敗：'+authErrMsg(err));
-    }
+    showToast('登入失敗：'+authErrMsg(err));
+  }
+}
+async function registerFlow(email, password){
+  const ok = await showConfirm('確定要用「'+email+'」建立新帳號嗎？請務必記住密碼，之後無法在前端重設。');
+  if(!ok) return;
+  try{
+    await createUserWithEmailAndPassword(auth, email, password);
+  }catch(err){
+    showToast('註冊失敗：'+authErrMsg(err));
   }
 }
 
@@ -446,14 +452,27 @@ document.getElementById('staff-login-btn').addEventListener('click', async ()=>{
   const email=document.getElementById('staff-email-input').value.trim();
   const pw=document.getElementById('staff-pw-input').value;
   if(!email||!pw){ showToast('請輸入 Email 與密碼'); return; }
-  await emailPasswordFlow(email, pw);
+  await loginFlow(email, pw);
+});
+document.getElementById('staff-register-btn').addEventListener('click', async ()=>{
+  const email=document.getElementById('staff-email-input').value.trim();
+  const pw=document.getElementById('staff-pw-input').value;
+  if(!email||!pw){ showToast('請輸入 Email 與密碼'); return; }
+  await registerFlow(email, pw);
 });
 document.getElementById('student-login-btn').addEventListener('click', async ()=>{
   const raw=document.getElementById('student-id-input').value.trim();
   const pw=document.getElementById('student-pw-input').value;
   if(!raw||!pw){ showToast('請輸入座號與密碼'); return; }
   const sid=normalizeSeatNo(raw);
-  await emailPasswordFlow(sid+'@'+CLASS_DOMAIN, pw);
+  await loginFlow(sid+'@'+CLASS_DOMAIN, pw);
+});
+document.getElementById('student-register-btn').addEventListener('click', async ()=>{
+  const raw=document.getElementById('student-id-input').value.trim();
+  const pw=document.getElementById('student-pw-input').value;
+  if(!raw||!pw){ showToast('請輸入座號與密碼'); return; }
+  const sid=normalizeSeatNo(raw);
+  await registerFlow(sid+'@'+CLASS_DOMAIN, pw);
 });
 document.getElementById('who-change-btn').addEventListener('click', async ()=>{
   if(!auth.currentUser){ document.getElementById('role-bg').classList.add('show'); return; }
