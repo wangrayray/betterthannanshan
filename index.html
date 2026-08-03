@@ -157,6 +157,20 @@
   .paid-check input{width:17px;height:17px;cursor:pointer;accent-color:var(--mine);}
   .outside-row.paid{background:#EAF6EC;}
   .paid-tag{color:var(--mine);font-weight:700;}
+  .rec-section{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);}
+  .rec-search-row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px;}
+  .rec-search-row .rec-search-input{flex:1;min-width:140px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;background:#fff;}
+  .rec-search-results{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+  .rec-result-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px dashed var(--outside);border-radius:8px;padding:7px 10px;}
+  .rec-list{display:flex;flex-direction:column;gap:6px;}
+  .rec-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border-radius:8px;padding:7px 10px;flex-wrap:wrap;}
+  .rec-info{display:flex;flex-direction:column;gap:1px;}
+  .rec-name{font-size:13px;font-weight:700;}
+  .rec-count{font-size:11.5px;color:var(--outside);font-weight:700;margin-left:6px;}
+  .rec-address{font-size:11px;color:var(--ink-soft);}
+  .rec-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+  .rec-map-link{font-size:11px;color:var(--outside);text-decoration:none;white-space:nowrap;}
+  .rec-vote-btn{border:1px solid var(--line);background:var(--paper-soft);border-radius:20px;padding:4px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;}
   .event-delete{padding:8px 16px 14px;text-align:right;}
   .qty-item{display:flex;align-items:center;gap:5px;background:var(--paper-soft);border-radius:7px;padding:3px 3px 3px 8px;}
   .qty-item-name{font-size:11.5px;color:var(--ink-soft);}
@@ -289,7 +303,7 @@ import {
   createUserWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
-  initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
+  initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, increment,
   collection, collectionGroup, getDocs, onSnapshot, writeBatch, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
@@ -328,6 +342,8 @@ let dinnerChoice = {};  // date -> [...]
 let events = {};        // id -> {id,title,createdAt,createdBy,lastEditBy,lastEditAt}
 let eventMenu = {};     // eventId -> [{id,name,price}]
 let eventOrders = {};   // eventId -> [{id,studentId,name,items,updatedAt}]
+let eventRecommendations = {}; // eventId -> [{id,name,address,lat,lon,count,...}] 餐廳推薦，同名同址自動累計 count
+let searchResults = {}; // eventId -> 暫存的「附近餐廳／搜尋店名」結果，只是本機暫存，不會寫入 Firestore
 let settings = { rosterSize:49, includeTeacher:true };
 let studentsRoster = {}; // studentId -> {name}
 let staffList = {};      // email -> {name}
@@ -462,6 +478,7 @@ function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); un
 function teardownState(){
   teardownListeners();
   entries={}; lunchChoice={}; dinnerChoice={}; events={}; eventMenu={}; eventOrders={};
+  eventRecommendations={}; searchResults={};
   studentsRoster={}; staffList={}; eventCoordinators={}; draftChoice={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
@@ -562,6 +579,12 @@ function subscribeAll(){
     snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
     eventOrders=grouped; render();
   }, subErr('orders')));
+
+  unsubs.push(onSnapshot(collectionGroup(db,'recommendations'), snap=>{
+    const grouped={};
+    snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
+    eventRecommendations=grouped; render();
+  }, subErr('recommendations')));
 }
 
 // ============================================================
@@ -581,23 +604,36 @@ async function addDate(dateStr, opts){
     setTimeout(()=>{ const el=document.querySelector('[data-datecard="'+dateStr+'"]'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },60);
   }
 }
-async function copyChoiceFromPrevWeek(dateStr){
-  const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
+async function copyChoiceBetweenDates(fromKey, toDateStr){
   const batch=writeBatch(db);
-  (lunchChoice[prevKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',dateStr,'lunch_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:dateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
+  (lunchChoice[fromKey]||[]).forEach(o=>{
+    batch.set(doc(db,'entries',toDateStr,'lunch_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
   });
-  (dinnerChoice[prevKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',dateStr,'dinner_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:dateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
+  (dinnerChoice[fromKey]||[]).forEach(o=>{
+    batch.set(doc(db,'entries',toDateStr,'dinner_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
   });
   await batch.commit();
+}
+async function copyChoiceFromPrevWeek(dateStr){
+  const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
+  await copyChoiceBetweenDates(prevKey, dateStr);
 }
 async function applyLastWeekTo(dateStr){
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
   if(!(lunchChoice[prevKey]||dinnerChoice[prevKey])){ showToast('找不到上週同星期的資料'); return; }
-  await copyChoiceFromPrevWeek(dateStr);
+  await copyChoiceBetweenDates(prevKey, dateStr);
   await touchEntry(dateStr);
   showToast('已套用上週同星期資料');
+}
+async function applyPrevDayTo(dateStr){
+  // 伙委專用：找「這個日期之前、最近一次有建立紀錄」的那一天（通常就是昨天，
+  // 如果昨天沒上課就會抓最近一次有上課的那天），把全班的午晚餐選擇整批複製過來。
+  const prevKeys = Object.keys(entries).filter(k=>k<dateStr).sort((a,b)=>b.localeCompare(a));
+  const prevKey = prevKeys[0];
+  if(!prevKey){ showToast('找不到更早的紀錄可以套用'); return; }
+  await copyChoiceBetweenDates(prevKey, dateStr);
+  await touchEntry(dateStr);
+  showToast('已套用「'+formatMD(parseDate(prevKey))+'」的資料');
 }
 async function addWeek(anchorDateStr){
   if(!anchorDateStr) return;
@@ -760,6 +796,52 @@ async function deleteEvent(id){
 function eventTotal(ev){ return (eventOrders[ev.id]||[]).reduce((s,o)=>s+orderTotal(o, eventMenu[ev.id]||[]),0); }
 
 // ============================================================
+// 餐廳推薦（用免費的 OpenStreetMap，不需要申請 Google Maps API 金鑰/信用卡）
+// - Overpass API：查詢目前位置附近的餐廳/小吃/咖啡廳
+// - Nominatim API：依店名搜尋地點（地理編碼）
+// 兩個都是 OSM 社群提供的公用免費伺服器，正式大量使用建議之後改自架，
+// 但一個班級的使用量遠低於他們的公平使用原則，可以直接用。
+// ============================================================
+function simpleHash(str){
+  let h=0;
+  for(let i=0;i<str.length;i++){ h=(h*31+str.charCodeAt(i))|0; }
+  return (h>>>0).toString(36);
+}
+async function searchNearbyRestaurants(lat, lon, radius){
+  const q = `[out:json][timeout:20];(node["amenity"="restaurant"](around:${radius},${lat},${lon});node["amenity"="fast_food"](around:${radius},${lat},${lon});node["amenity"="cafe"](around:${radius},${lat},${lon}););out center;`;
+  const res = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data='+encodeURIComponent(q)});
+  if(!res.ok) throw new Error('查詢附近餐廳失敗，請稍後再試');
+  const data = await res.json();
+  return (data.elements||[])
+    .map(el=>{
+      const tags=el.tags||{};
+      const addrParts=[tags['addr:city'],tags['addr:district'],tags['addr:street'],tags['addr:housenumber']].filter(Boolean);
+      return { name: tags.name||'', address: addrParts.join(''), lat: el.lat, lon: el.lon };
+    })
+    .filter(r=>r.name);
+}
+async function searchPlaceByName(qStr){
+  const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=8&addressdetails=0&countrycodes=tw&q='+encodeURIComponent(qStr));
+  if(!res.ok) throw new Error('搜尋失敗，請稍後再試');
+  const data = await res.json();
+  return (data||[]).map(r=>({ name:(r.display_name||'').split(',')[0].trim(), address:r.display_name||'', lat:Number(r.lat), lon:Number(r.lon) }));
+}
+async function recommendRestaurant(eventId, name, address, lat, lon){
+  name=(name||'').trim(); address=(address||'').trim();
+  if(!name){ showToast('請輸入或選擇餐廳名稱'); return; }
+  const recId = 'r'+simpleHash(name.toLowerCase()+'|'+address.toLowerCase());
+  await setDoc(doc(db,'events',eventId,'recommendations',recId), {
+    name, address, lat: (lat===undefined||lat===null||isNaN(lat))?null:lat, lon:(lon===undefined||lon===null||isNaN(lon))?null:lon,
+    count: increment(1), eventId,
+    lastRecommendedBy: identity(), lastRecommendedAt: new Date().toISOString()
+  }, {merge:true});
+  showToast('已推薦「'+name+'」');
+}
+async function removeRecommendation(eventId, recId){
+  await deleteDoc(doc(db,'events',eventId,'recommendations',recId));
+}
+
+// ============================================================
 // RENDER
 // ============================================================
 function render(){
@@ -832,7 +914,7 @@ function renderStaffDateCard(date){
       ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
     </div>
     <div class="date-foot">
-      <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button><button class="copy-last-btn" data-action="copy-last-week" data-date="${date}">套用上週同星期</button></div>
+      <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button><button class="copy-last-btn" data-action="copy-prev-day" data-date="${date}">跟前一天一樣</button><button class="copy-last-btn" data-action="copy-last-week" data-date="${date}">套用上週同星期</button></div>
       <span class="edit-tag">${e.lastEditBy?'最後編輯：'+escapeHtml(e.lastEditBy)+' · '+fmtTime(e.lastEditAt):''}</span>
     </div>
   </div>`;
@@ -885,52 +967,27 @@ function renderStudentDateCard(date){
   </div>`;
 }
 
-// 找這個人在某餐別「最近一次有選擇」的紀錄（可能是昨天，也可能是最近一次有到校的那天），
-// 用來讓同學一鍵套用「跟上次一樣」，不用每天重新點選。
-function findPrevChoice(date, meal, sid){
-  const list = meal==='lunch'?lunchChoice:dinnerChoice;
-  const keys = Object.keys(list).filter(k=>k<date).sort((a,b)=>b.localeCompare(a));
-  for(const k of keys){
-    const mine=(list[k]||[]).find(c=>c.id===sid && c.status);
-    if(mine) return {status:mine.status, note:mine.note||'', dateKey:k};
-  }
-  return null;
-}
-
 function renderStudentMealCard(date, meal, label, m, choiceList){
   const mine=choiceList.find(c=>c.id===studentId);
   const savedStatus=mine?mine.status:'';
-  const savedNote=mine?(mine.note||''):'';
   const key=date+'|'+meal;
   const draft=draftChoice[key];
   const dirty=!!draft;
   const status=dirty?draft.status:savedStatus;
-  const note=dirty?draft.note:savedNote;
   const screenshot = m.screenshot || null;
   let statusLine;
   if(dirty) statusLine='已選擇「'+(STATUS_LABEL[status]||'取消選擇')+'」，尚未送出（僅暫存於本機）';
   else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
   else statusLine='尚未選擇';
 
-  const prev = findPrevChoice(date, meal, studentId);
-  let sameAsBtn = '';
-  if(prev && (prev.status!==status || prev.note!==note)){
-    const yesterdayKey = toKey((()=>{const d=parseDate(date); d.setDate(d.getDate()-1); return d;})());
-    const pObj = parseDate(prev.dateKey);
-    const dateLabel = prev.dateKey===yesterdayKey ? '昨天' : (formatMD(pObj)+'（週'+WD[pObj.getDay()]+'）');
-    sameAsBtn = `<button type="button" class="same-as-btn" data-action="same-as-prev" data-date="${date}" data-meal="${meal}" data-status="${prev.status}" data-note="${escapeHtml(prev.note)}">🔁 跟${dateLabel}一樣（${STATUS_LABEL[prev.status]||''}）</button>`;
-  }
-
   return `
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}</div>
-    ${sameAsBtn}
     <div class="choice-buttons">
       <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="meat">🍖 葷食</button>
       <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="veg">🥦 素食</button>
       <button type="button" class="choice-btn cancel ${status==='cancel'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="cancel">🚫 退餐</button>
     </div>
-    <input type="text" class="note-input" placeholder="備註（選填，例如：不吃蛋）" value="${escapeHtml(note)}" data-action="draft-note" data-date="${date}" data-meal="${meal}" ${status?'':'disabled'}>
     <div class="submit-row ${dirty?'dirty':''}">
       <span class="submit-status">${escapeHtml(statusLine)}</span>
       <button type="button" class="btn btn-primary btn-submit-choice" data-action="submit-choice" data-date="${date}" data-meal="${meal}" ${dirty?'':'disabled'}>確定送出</button>
@@ -964,6 +1021,48 @@ function renderEventTab(){
   let html = addHtml + noteHtml + overviewHtml;
   list.forEach(ev=>{ html += manage ? renderStaffEventCard(ev) : renderStudentEventCard(ev); });
   content.innerHTML = html;
+}
+
+function renderRecommendSection(eventId, canDelete){
+  const recs = (eventRecommendations[eventId]||[]).slice().sort((a,b)=>(b.count||0)-(a.count||0));
+  const results = searchResults[eventId]||[];
+
+  const resultsHtml = results.length ? `
+    <div class="rec-search-results">
+      ${results.map((r,i)=>`
+        <div class="rec-result-row">
+          <div class="rec-info"><span class="rec-name">${escapeHtml(r.name||'（無名稱）')}</span>${r.address?`<div class="rec-address">${escapeHtml(r.address)}</div>`:''}</div>
+          <button type="button" class="btn btn-outside" data-action="pick-restaurant-result" data-event="${eventId}" data-index="${i}">我要推薦</button>
+        </div>`).join('')}
+    </div>` : '';
+
+  const listHtml = recs.length ? `
+    <div class="rec-list">
+      ${recs.map(r=>`
+        <div class="rec-row">
+          <div class="rec-info">
+            <span class="rec-name">${escapeHtml(r.name)}<span class="rec-count">×${r.count||1}</span></span>
+            ${r.address?`<div class="rec-address">${escapeHtml(r.address)}</div>`:''}
+          </div>
+          <div class="rec-actions">
+            ${(r.lat&&r.lon)?`<a class="rec-map-link" href="https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lon}#map=18/${r.lat}/${r.lon}" target="_blank" rel="noopener">🗺️ 地圖</a>`:''}
+            <button type="button" class="rec-vote-btn" data-action="vote-recommend" data-event="${eventId}" data-id="${r.id}">👍 +1</button>
+            ${canDelete?`<button type="button" class="outside-remove" data-action="remove-recommend" data-event="${eventId}" data-id="${r.id}">×</button>`:''}
+          </div>
+        </div>`).join('')}
+    </div>` : `<div class="other-label">目前還沒有人推薦餐廳</div>`;
+
+  return `
+  <div class="rec-section">
+    <div class="section-label">🍽️ 餐廳推薦（找附近餐廳或搜尋店名，推薦後同名同地址會自動累計次數，不用申請任何帳號，用的是免費的 OpenStreetMap 資料）</div>
+    <div class="rec-search-row">
+      <button type="button" class="btn btn-ghost" data-action="find-nearby" data-event="${eventId}">📍 找我附近的餐廳</button>
+      <input type="text" class="rec-search-input" placeholder="或輸入店名搜尋" data-action="rec-search-input" data-event="${eventId}">
+      <button type="button" class="btn btn-ghost" data-action="search-restaurant-name" data-event="${eventId}">搜尋</button>
+    </div>
+    ${resultsHtml}
+    ${listHtml}
+  </div>`;
 }
 
 function renderStaffEventCard(ev){
@@ -1028,6 +1127,8 @@ function renderStaffEventCard(ev){
       ${customOrders.length ? `<div class="outside-list">${customRows}</div>` : ''}
       <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="event-name-input" data-event="${ev.id}"><button data-action="add-event-name" data-event="${ev.id}">新增</button></div>
       <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}・<span class="paid-tag">已繳款 ${paidCount} 人（NT$ ${paidTotal}）</span>${unpaidCount?`・尚未繳款 ${unpaidCount} 人`:''}</div>
+
+      ${renderRecommendSection(ev.id, true)}
     </div>
     <div class="event-delete"><button class="date-delete" data-action="delete-event" data-event="${ev.id}">刪除此活動</button></div>
   </div>`;
@@ -1057,6 +1158,8 @@ function renderStudentEventCard(ev){
         <div class="outside-list">${itemRows}</div>
         <div class="outside-total">我的金額：NT$ ${mySub}${mine.paid?'　<span class="paid-tag">✓ 伙委已確認收款</span>':''}</div>
       ` : `<div class="other-label">伙委尚未設定菜單選項</div>`}
+
+      ${renderRecommendSection(ev.id, false)}
     </div>
   </div>`;
 }
@@ -1100,24 +1203,9 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const list = meal==='lunch'?lunchChoice:dinnerChoice;
     const existing=(list[date]||[]).find(o=>o.id===studentId);
     const savedStatus = existing?existing.status:'';
-    const savedNote = existing?(existing.note||''):'';
-    const current = draftChoice[key] || {status:savedStatus, note:savedNote};
-    const newStatus = current.status===status ? '' : status; // 再點一次同一個 = 取消選擇
-    draftChoice[key] = {status:newStatus, note:current.note};
-    if(draftChoice[key].status===savedStatus && draftChoice[key].note===savedNote){ delete draftChoice[key]; }
-    render();
-  }
-  else if(action==='same-as-prev'){
-    // 一鍵套用「跟上次一樣」，同樣只更新本機暫存，要按「確定送出」才會真的寫入
-    const status=el.dataset.status;
-    const note=el.dataset.note||'';
-    const key=date+'|'+meal;
-    const list = meal==='lunch'?lunchChoice:dinnerChoice;
-    const existing=(list[date]||[]).find(o=>o.id===studentId);
-    const savedStatus = existing?existing.status:'';
-    const savedNote = existing?(existing.note||''):'';
-    draftChoice[key] = {status, note};
-    if(draftChoice[key].status===savedStatus && draftChoice[key].note===savedNote){ delete draftChoice[key]; }
+    const current = draftChoice[key] ? draftChoice[key].status : savedStatus;
+    const newStatus = current===status ? '' : status; // 再點一次同一個 = 取消選擇
+    if(newStatus===savedStatus){ delete draftChoice[key]; } else { draftChoice[key] = {status:newStatus}; }
     render();
   }
   else if(action==='submit-choice'){
@@ -1125,11 +1213,8 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const list = meal==='lunch'?lunchChoice:dinnerChoice;
     const existing=(list[date]||[]).find(o=>o.id===studentId);
     const savedStatus = existing?existing.status:'';
-    const savedNote = existing?(existing.note||''):'';
     const draft=draftChoice[key];
     const status = draft ? draft.status : savedStatus;
-    const noteInput=document.querySelector(`input[data-action="draft-note"][data-date="${date}"][data-meal="${meal}"]`);
-    const note = noteInput ? noteInput.value.trim() : (draft ? draft.note : savedNote);
     const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const ref=doc(db,'entries',date,collName,studentId);
     if(!status){
@@ -1137,9 +1222,9 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
       showToast('已送出：取消訂餐選擇');
     } else {
       await setDoc(ref, {
-        seatNo:studentId, studentId, name:studentId, status, note,
+        seatNo:studentId, studentId, name:studentId, status,
         date, updatedBy:identity(), updatedAt:new Date().toISOString()
-      });
+      }, {merge:true});
       showToast('已送出：'+(STATUS_LABEL[status]||''));
     }
     delete draftChoice[key];
@@ -1148,6 +1233,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
   else if(action==='delete-week'){ ev.stopPropagation(); await deleteWeek(el.dataset.week); }
   else if(action==='copy-last-week'){ ev.stopPropagation(); await applyLastWeekTo(date); }
+  else if(action==='copy-prev-day'){ ev.stopPropagation(); await applyPrevDayTo(date); }
   else if(action==='add-name'){
     const input=document.querySelector(`input[data-action="name-input"][data-date="${date}"][data-meal="${meal}"]`);
     const name=input.value.trim(); if(!name) return;
@@ -1191,6 +1277,43 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     await addEventCustomName(eventId, name);
     input.value='';
   }
+  else if(action==='find-nearby'){
+    if(!navigator.geolocation){ showToast('這個瀏覽器不支援定位功能'); return; }
+    showToast('正在定位並搜尋附近餐廳…');
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      try{
+        const list = await searchNearbyRestaurants(pos.coords.latitude, pos.coords.longitude, 800);
+        searchResults[eventId] = list;
+        if(list.length===0) showToast('附近 800 公尺內沒有找到餐廳資料（地圖資料庫可能不完整，可以改用店名搜尋）');
+        render();
+      }catch(err){ console.error(err); showToast('搜尋失敗：'+err.message); }
+    }, (err)=>{ showToast('無法取得目前位置：'+err.message); }, {timeout:10000});
+  }
+  else if(action==='search-restaurant-name'){
+    const input=document.querySelector(`input[data-action="rec-search-input"][data-event="${eventId}"]`);
+    const q=input.value.trim();
+    if(!q){ showToast('請輸入要搜尋的店名'); return; }
+    const list = await searchPlaceByName(q);
+    searchResults[eventId] = list;
+    if(list.length===0) showToast('找不到符合的地點');
+    render();
+  }
+  else if(action==='pick-restaurant-result'){
+    const idx=Number(el.dataset.index);
+    const r=(searchResults[eventId]||[])[idx];
+    if(!r) return;
+    await recommendRestaurant(eventId, r.name, r.address, r.lat, r.lon);
+    delete searchResults[eventId];
+    render();
+  }
+  else if(action==='vote-recommend'){
+    const r=(eventRecommendations[eventId]||[]).find(x=>x.id===el.dataset.id);
+    if(!r) return;
+    await recommendRestaurant(eventId, r.name, r.address, r.lat, r.lon);
+  }
+  else if(action==='remove-recommend'){
+    await removeRecommendation(eventId, el.dataset.id);
+  }
 
   }catch(err){
     console.error(err);
@@ -1225,21 +1348,7 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
 
 document.getElementById('content').addEventListener('change', async (ev)=>{
   try{
-  if(ev.target.dataset.action==='draft-note'){
-    // 備註只更新本機暫存，要按「確定送出」才會真正寫入 Firestore
-    const date=ev.target.dataset.date, meal=ev.target.dataset.meal;
-    const key=date+'|'+meal;
-    const list = meal==='lunch'?lunchChoice:dinnerChoice;
-    const existing=(list[date]||[]).find(o=>o.id===studentId);
-    const savedStatus = existing?existing.status:'';
-    const savedNote = existing?(existing.note||''):'';
-    const current = draftChoice[key] || {status:savedStatus, note:savedNote};
-    current.note = ev.target.value;
-    draftChoice[key]=current;
-    if(draftChoice[key].status===savedStatus && draftChoice[key].note===savedNote){ delete draftChoice[key]; }
-    render();
-  }
-  else if(ev.target.dataset.action==='item-qty'){
+  if(ev.target.dataset.action==='item-qty'){
     await setItemQty(ev.target.dataset.event, ev.target.dataset.label, ev.target.dataset.item, ev.target.value);
   }
   else if(ev.target.dataset.action==='toggle-paid'){

@@ -98,16 +98,6 @@ service cloud.firestore {
     match /entries/{date} {
       allow read: if isSignedIn();
       allow write: if isStaff();
-
-      match /lunch_choice/{sid} {
-        allow read: if isSignedIn();
-        allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
-      }
-
-      match /dinner_choice/{sid} {
-        allow read: if isSignedIn();
-        allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
-      }
     }
 
     // ---------------- events（外食訂購活動） ----------------
@@ -115,16 +105,44 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if isSignedIn();
       allow write: if isStaff() || isEventCoordinator();
+    }
 
-      match /menu/{itemId} {
-        allow read: if isSignedIn();
-        allow write: if isStaff() || isEventCoordinator();
-      }
+    // ---------------- 以下用 {path=**} 遞迴萬用字元 ----------------
+    // 重要：app 裡用 collectionGroup() 一次讀取「所有日期/所有活動」底下的
+    // lunch_choice / dinner_choice / menu / orders（例如伙委頁要同時看到全部
+    // 日期的訂餐狀態）。Firestore 規定：collectionGroup() 查詢只吃「頂層」用
+    // {path=**} 萬用字元寫的規則，寫在某個集合內部的巢狀 match（例如寫在
+    // entries/{date} 或 events/{eventId} 裡面）只對「已知完整路徑」單一文件的
+    // 讀寫有效，對 collectionGroup 查詢完全不會生效、會直接被拒絕（但因為前端
+    // 用的是即時監聽 onSnapshot，錯誤不會跳出明顯的例外，看起來就像是「資料寫
+    // 進去了，畫面卻永遠不會更新」）。這正是先前系統看起來「沒有反應」的真正
+    // 原因，因此以下規則一律寫在最外層，不要巢狀寫在其他 match 裡面。
+    match /{path=**}/lunch_choice/{sid} {
+      allow read: if isSignedIn();
+      allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
+    }
 
-      match /orders/{sid} {
-        allow read: if isSignedIn();
-        allow write: if isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent());
-      }
+    match /{path=**}/dinner_choice/{sid} {
+      allow read: if isSignedIn();
+      allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
+    }
+
+    match /{path=**}/menu/{itemId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff() || isEventCoordinator();
+    }
+
+    match /{path=**}/orders/{sid} {
+      allow read: if isSignedIn();
+      allow write: if isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent());
+    }
+
+    // 餐廳推薦：任何在名冊上的同學、伙委、外食訂購人都可以推薦/+1（累加次數），
+    // 但只有伙委／外食訂購人可以刪除（清掉重複或不合適的建議）。
+    match /{path=**}/recommendations/{recId} {
+      allow read: if isSignedIn();
+      allow create, update: if isStaff() || isEventCoordinator() || isRosterStudent();
+      allow delete: if isStaff() || isEventCoordinator();
     }
 
     // 預設拒絕所有其他路徑
