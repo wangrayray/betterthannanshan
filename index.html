@@ -283,7 +283,7 @@ import {
   createUserWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
+  initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
   collection, collectionGroup, getDocs, onSnapshot, writeBatch, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
@@ -307,7 +307,9 @@ const COORDINATOR_DAYS = 14;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// 用 experimentalAutoDetectLongPolling 避免在學校/公司網路（會擋住持續串流連線）
+// 下 Firestore 即時更新（onSnapshot）連不上、資料寫進去了畫面卻不會更新的問題。
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true, useFetchStreams: false });
 
 // ============================================================
 // 狀態
