@@ -8,7 +8,7 @@ rules_version = '2';
 //     即視為伙委，可讀寫所有 collection。
 //   - 同學（student）：Firebase Auth 帳號的 email 格式為 座號@yourclass.local
 //     （網域字串需與 index.html 內的 CLASS_DOMAIN 常數一致）。
-//     同學只能寫入「自己座號」對應的文件（退餐狀態 lunch_off/dinner_off、
+//     同學只能寫入「自己座號」對應的文件（訂餐選擇 lunch_choice/dinner_choice、
 //     外食訂單 orders），且該座號必須已存在於 /students 名冊中才允許寫入。
 //   - 外食訂購人（event coordinator）：伙委在設定頁指定某個座號、效期 14 天，
 //     期間內該座號的帳號可以完整管理 events（含建立/刪除活動、菜單、任何人的訂單），
@@ -94,17 +94,17 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
-    // ---------------- entries（退餐紀錄，依日期） ----------------
+    // ---------------- entries（訂餐/退餐紀錄，依日期） ----------------
     match /entries/{date} {
       allow read: if isSignedIn();
       allow write: if isStaff();
 
-      match /lunch_off/{sid} {
+      match /lunch_choice/{sid} {
         allow read: if isSignedIn();
         allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
       }
 
-      match /dinner_off/{sid} {
+      match /dinner_choice/{sid} {
         allow read: if isSignedIn();
         allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
       }

@@ -93,6 +93,21 @@
   .number-cell.mine{box-shadow:0 0 0 2px var(--mine);}
   .number-cell.outside-cell{background:#fff;color:var(--ink-soft);border:1px dashed var(--line);}
   .number-cell.outside-cell.active{background:var(--outside);color:#fff;border-color:var(--outside);}
+  .number-cell.unset{background:#fff;color:var(--ink-soft);border:1px dashed var(--line);}
+  .meal-card.lunch .number-cell.meat{background:var(--lunch);color:#fff;}
+  .meal-card.dinner .number-cell.meat{background:var(--dinner);color:#fff;}
+  .number-cell.veg{background:var(--mine);color:#fff;}
+  .number-cell.cancel{background:#fff;color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
+  .meal-summary{font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.7;}
+  .meal-summary b{color:var(--ink);}
+  .choice-buttons{display:flex;gap:8px;margin-bottom:8px;}
+  .choice-btn{flex:1;font-family:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 6px;font-size:13px;font-weight:700;background:#fff;color:var(--ink-soft);cursor:pointer;text-align:center;}
+  .meal-card.lunch .choice-btn.active.meat{background:var(--lunch);color:#fff;border-color:var(--lunch);}
+  .meal-card.dinner .choice-btn.active.meat{background:var(--dinner);color:#fff;border-color:var(--dinner);}
+  .choice-btn.active.veg{background:var(--mine);color:#fff;border-color:var(--mine);}
+  .choice-btn.active.cancel{background:var(--danger);color:#fff;border-color:var(--danger);}
+  .note-input{width:100%;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:12.5px;background:#fff;margin-top:2px;}
+  .note-input:disabled{background:var(--paper-soft);color:var(--ink-soft);}
 
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
   .name-chip{display:flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 6px 4px 10px;font-size:12.5px;}
@@ -294,9 +309,10 @@ const db = getFirestore(app);
 // 狀態
 // ============================================================
 const WD = ['日','一','二','三','四','五','六'];
-let entries = {};      // date -> {date,lunch:{orderCount,screenshot},dinner:{...},lastEditBy,lastEditAt}
-let lunchOff = {};      // date -> [{id,studentId,name,addedBy,addedAt}]
-let dinnerOff = {};     // date -> [...]
+const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐'};
+let entries = {};      // date -> {date,lunch:{screenshot},dinner:{...},lastEditBy,lastEditAt}
+let lunchChoice = {};   // date -> [{id,seatNo,name,status:'meat'|'veg'|'cancel',note,updatedBy,updatedAt}]
+let dinnerChoice = {};  // date -> [...]
 let events = {};        // id -> {id,title,createdAt,createdBy,lastEditBy,lastEditAt}
 let eventMenu = {};     // eventId -> [{id,name,price}]
 let eventOrders = {};   // eventId -> [{id,studentId,name,items,updatedAt}]
@@ -432,7 +448,7 @@ function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); un
 
 function teardownState(){
   teardownListeners();
-  entries={}; lunchOff={}; dinnerOff={}; events={}; eventMenu={}; eventOrders={};
+  entries={}; lunchChoice={}; dinnerChoice={}; events={}; eventMenu={}; eventOrders={};
   studentsRoster={}; staffList={}; eventCoordinators={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
@@ -494,16 +510,16 @@ function subscribeAll(){
     render();
   }, noop));
 
-  unsubs.push(onSnapshot(collectionGroup(db,'lunch_off'), snap=>{
+  unsubs.push(onSnapshot(collectionGroup(db,'lunch_choice'), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
-    lunchOff=grouped; render();
+    lunchChoice=grouped; render();
   }, noop));
 
-  unsubs.push(onSnapshot(collectionGroup(db,'dinner_off'), snap=>{
+  unsubs.push(onSnapshot(collectionGroup(db,'dinner_choice'), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
-    dinnerOff=grouped; render();
+    dinnerChoice=grouped; render();
   }, noop));
 
   unsubs.push(onSnapshot(collection(db,'events'), snap=>{
@@ -534,9 +550,9 @@ async function addDate(dateStr, opts){
   opts=opts||{};
   if(!dateStr) return;
   if(!entries[dateStr]){
-    const data = { date:dateStr, lunch:{orderCount:null,screenshot:null}, dinner:{orderCount:null,screenshot:null}, lastEditBy:identity(), lastEditAt:new Date().toISOString() };
+    const data = { date:dateStr, lunch:{screenshot:null}, dinner:{screenshot:null}, lastEditBy:identity(), lastEditAt:new Date().toISOString() };
     await setDoc(doc(db,'entries',dateStr), data, {merge:true});
-    if(opts.copyFromPrevWeek){ await copyOffFromPrevWeek(dateStr); }
+    if(opts.copyFromPrevWeek){ await copyChoiceFromPrevWeek(dateStr); }
   }
   collapsedDates.delete(dateStr);
   if(!opts.silent){
@@ -544,21 +560,21 @@ async function addDate(dateStr, opts){
     setTimeout(()=>{ const el=document.querySelector('[data-datecard="'+dateStr+'"]'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },60);
   }
 }
-async function copyOffFromPrevWeek(dateStr){
+async function copyChoiceFromPrevWeek(dateStr){
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
   const batch=writeBatch(db);
-  (lunchOff[prevKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',dateStr,'lunch_off',o.id), {studentId:o.studentId||o.id, name:o.name||o.id, date:dateStr, addedBy:identity(), addedAt:new Date().toISOString()});
+  (lunchChoice[prevKey]||[]).forEach(o=>{
+    batch.set(doc(db,'entries',dateStr,'lunch_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:dateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
   });
-  (dinnerOff[prevKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',dateStr,'dinner_off',o.id), {studentId:o.studentId||o.id, name:o.name||o.id, date:dateStr, addedBy:identity(), addedAt:new Date().toISOString()});
+  (dinnerChoice[prevKey]||[]).forEach(o=>{
+    batch.set(doc(db,'entries',dateStr,'dinner_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:dateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
   });
   await batch.commit();
 }
 async function applyLastWeekTo(dateStr){
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
-  if(!(lunchOff[prevKey]||dinnerOff[prevKey])){ showToast('找不到上週同星期的資料'); return; }
-  await copyOffFromPrevWeek(dateStr);
+  if(!(lunchChoice[prevKey]||dinnerChoice[prevKey])){ showToast('找不到上週同星期的資料'); return; }
+  await copyChoiceFromPrevWeek(dateStr);
   await touchEntry(dateStr);
   showToast('已套用上週同星期資料');
 }
@@ -580,8 +596,8 @@ async function addWeek(anchorDateStr){
 async function deleteDate(dateStr){
   const ok=await showConfirm(dateStr+' 的紀錄要刪除嗎？此動作無法復原。');
   if(!ok) return;
-  const lunchSnap=await getDocs(collection(db,'entries',dateStr,'lunch_off'));
-  const dinnerSnap=await getDocs(collection(db,'entries',dateStr,'dinner_off'));
+  const lunchSnap=await getDocs(collection(db,'entries',dateStr,'lunch_choice'));
+  const dinnerSnap=await getDocs(collection(db,'entries',dateStr,'dinner_choice'));
   const batch=writeBatch(db);
   lunchSnap.forEach(d=>batch.delete(d.ref));
   dinnerSnap.forEach(d=>batch.delete(d.ref));
@@ -622,9 +638,19 @@ async function handleFile(date,meal,file){
   }catch(e){ showToast('截圖處理失敗：'+e.message); }
 }
 
-function mealSummary(orderCount, offList){
-  const c=(offList||[]).length; const o=(orderCount===''||orderCount==null)?'—':orderCount;
-  return '訂'+o+'・退'+c;
+function mealCounts(choiceList){
+  const list=choiceList||[];
+  const roster=rosterLabels();
+  const meat=list.filter(c=>c.status==='meat').length;
+  const veg=list.filter(c=>c.status==='veg').length;
+  const cancel=list.filter(c=>c.status==='cancel').length;
+  const chosenRoster=list.filter(c=>roster.includes(c.id)).length;
+  const unset=Math.max(0, roster.length-chosenRoster);
+  return {meat,veg,cancel,unset,ordered:meat+veg};
+}
+function mealSummaryText(choiceList){
+  const c=mealCounts(choiceList);
+  return '訂'+c.ordered+'（葷'+c.meat+'／素'+c.veg+'）・退'+c.cancel+'・未選'+c.unset;
 }
 
 // ============================================================
@@ -662,11 +688,6 @@ function orderTotal(order, menu){
     const mi=(menu||[]).find(m=>m.id===itemId);
     return s + (mi ? mi.price*qty : 0);
   },0);
-}
-async function ensureParticipant(eventId, label){
-  const existing=(eventOrders[eventId]||[]).find(o=>o.id===label);
-  if(existing) return;
-  await setDoc(doc(db,'events',eventId,'orders',label), {studentId:label, name:label, items:{}, eventId, updatedBy:identity(), updatedAt:new Date().toISOString()});
 }
 async function setItemQty(eventId, label, itemId, val){
   const qty=Math.max(0, Math.floor(Number(val)||0));
@@ -760,16 +781,16 @@ function renderMealTab(){
 
 function renderStaffDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
-  const lOff=lunchOff[date]||[], dOff=dinnerOff[date]||[];
+  const lC=lunchChoice[date]||[], dC=dinnerChoice[date]||[];
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
       <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
-      <div class="date-head-right"><span class="chip-summary">午 ${mealSummary(e.lunch&&e.lunch.orderCount,lOff)}</span><span class="chip-summary">晚 ${mealSummary(e.dinner&&e.dinner.orderCount,dOff)}</span></div>
+      <div class="date-head-right"><span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span></div>
     </div>
     <div class="date-body">
-      ${renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lOff)}
-      ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dOff)}
+      ${renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lC)}
+      ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
     </div>
     <div class="date-foot">
       <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button><button class="copy-last-btn" data-action="copy-last-week" data-date="${date}">套用上週同星期</button></div>
@@ -778,24 +799,28 @@ function renderStaffDateCard(date){
   </div>`;
 }
 
-function renderStaffMealCard(date, meal, label, m, offList){
+function renderStaffMealCard(date, meal, label, m, choiceList){
   const shotId=date+'-'+meal;
   const roster=rosterLabels();
+  const counts=mealCounts(choiceList);
   const grid=roster.map(lab=>{
-    const off=offList.some(c=>c.id===lab);
-    return `<span class="number-cell ${off?'off':'on'}" data-action="toggle-num" data-date="${date}" data-meal="${meal}" data-label="${lab}">${lab}</span>`;
+    const c=choiceList.find(x=>x.id===lab);
+    const status=c?c.status:'unset';
+    const titleParts=[STATUS_LABEL[status]||'尚未選擇']; if(c&&c.note) titleParts.push('備註：'+c.note);
+    return `<span class="number-cell ${status}" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${lab}" title="${escapeHtml(titleParts.join('・'))}">${lab}</span>`;
   }).join('');
-  const others=offList.filter(c=>!roster.includes(c.id));
-  const orderCount = (m.orderCount===undefined||m.orderCount===null) ? '' : m.orderCount;
+  const others=choiceList.filter(c=>!roster.includes(c.id));
+  const notesList=choiceList.filter(c=>c.note);
   const screenshot = m.screenshot || null;
   return `
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}</div>
-    <div class="field-row"><label>目前訂餐人數</label><input type="number" min="0" value="${orderCount}" data-action="order-count" data-date="${date}" data-meal="${meal}" placeholder="—"></div>
-    <div class="section-label">已退餐 <b>${offList.length}</b> 人（點座號切換）</div>
+    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人・尚未選擇 <b>${counts.unset}</b> 人</div>
+    <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 未選）</div>
     <div class="number-grid">${grid}</div>
-    ${others.length?`<div class="other-label">其他（非座號名單）</div><div class="chips">${others.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}<button data-action="remove-name" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
+    ${others.length?`<div class="other-label">其他（非座號名單，點擊姓名可切換狀態）</div><div class="chips">${others.map(c=>`<span class="name-chip" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${c.id}">${escapeHtml(c.name||c.id)}・${STATUS_LABEL[c.status]||'未選'}<button data-action="remove-choice" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
     <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
+    ${notesList.length?`<div class="other-label">備註</div><div class="chips">${notesList.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}：${escapeHtml(c.note)}<button data-action="clear-note" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
     ${screenshot?`<div class="shot-zone" tabindex="0" data-action="paste-zone" data-date="${date}" data-meal="${meal}"><img src="${screenshot}" data-action="view-shot" data-src="${screenshot}"><div class="shot-actions"><span data-action="replace-shot" data-date="${date}" data-meal="${meal}">更換截圖</span><span class="danger" data-action="remove-shot" data-date="${date}" data-meal="${meal}">移除</span></div></div>`:`<div class="shot-zone" tabindex="0" data-action="paste-zone" data-date="${date}" data-meal="${meal}">📎 點此上傳或貼上截圖</div>`}
     <input type="file" accept="image/*" data-file-for="${shotId}">
   </div>`;
@@ -803,30 +828,34 @@ function renderStaffMealCard(date, meal, label, m, offList){
 
 function renderStudentDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
-  const lOff=lunchOff[date]||[], dOff=dinnerOff[date]||[];
+  const lC=lunchChoice[date]||[], dC=dinnerChoice[date]||[];
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
       <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
-      <div class="date-head-right"><span class="chip-summary">午 ${mealSummary(e.lunch&&e.lunch.orderCount,lOff)}</span><span class="chip-summary">晚 ${mealSummary(e.dinner&&e.dinner.orderCount,dOff)}</span></div>
+      <div class="date-head-right"><span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span></div>
     </div>
     <div class="date-body">
-      ${renderStudentMealCard(date,'lunch','午餐',e.lunch||{},lOff)}
-      ${renderStudentMealCard(date,'dinner','晚餐',e.dinner||{},dOff)}
+      ${renderStudentMealCard(date,'lunch','午餐',e.lunch||{},lC)}
+      ${renderStudentMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
     </div>
   </div>`;
 }
 
-function renderStudentMealCard(date, meal, label, m, offList){
-  const off = offList.some(c=>c.id===studentId);
+function renderStudentMealCard(date, meal, label, m, choiceList){
+  const mine=choiceList.find(c=>c.id===studentId);
+  const status=mine?mine.status:'';
+  const note=mine?(mine.note||''):'';
   const screenshot = m.screenshot || null;
   return `
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}</div>
-    <div class="own-toggle" data-action="student-toggle" data-date="${date}" data-meal="${meal}">
-      <div><div class="lab">我要退餐</div><div class="state-label">${off?'已標記退餐':'目前有訂餐'}</div></div>
-      <div class="switch ${off?'on':''}"><div class="knob"></div></div>
+    <div class="choice-buttons">
+      <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="choose-status" data-date="${date}" data-meal="${meal}" data-status="meat">🍖 葷食</button>
+      <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="choose-status" data-date="${date}" data-meal="${meal}" data-status="veg">🥦 素食</button>
+      <button type="button" class="choice-btn cancel ${status==='cancel'?'active':''}" data-action="choose-status" data-date="${date}" data-meal="${meal}" data-status="cancel">🚫 退餐</button>
     </div>
+    <input type="text" class="note-input" placeholder="備註（選填，例如：不吃蛋）" value="${escapeHtml(note)}" data-action="note-input" data-date="${date}" data-meal="${meal}" ${status?'':'disabled'}>
     ${screenshot?`<div class="shot-zone" data-action="view-shot" data-src="${screenshot}"><img src="${screenshot}">佐證截圖（點擊放大）</div>`:''}
   </div>`;
 }
@@ -866,12 +895,16 @@ function renderStaffEventCard(ev){
 
   const menuChips = menu.map(mi=>`<span class="name-chip">${escapeHtml(mi.name)} · NT$${mi.price}<button data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}">×</button></span>`).join('');
 
-  const grid=roster.map(lab=>{
-    const active=orders.some(o=>o.id===lab);
-    return `<span class="number-cell outside-cell ${active?'active':''}" data-action="add-participant" data-event="${ev.id}" data-label="${lab}">${lab}</span>`;
+  const rosterOrders = orders.filter(o=>roster.includes(o.id));
+  const customOrders = orders.filter(o=>!roster.includes(o.id));
+
+  const rosterRows = rosterOrders.map(o=>{
+    const sub=orderTotal(o, menu);
+    const itemList = menu.filter(mi=>(o.items&&o.items[mi.id])>0).map(mi=>escapeHtml(mi.name)+'×'+o.items[mi.id]).join('、') || '（尚未選擇品項）';
+    return `<div class="outside-row"><span class="outside-name">${escapeHtml(o.name||o.id)}</span><span style="flex:1;font-size:12.5px;color:var(--ink-soft);">${itemList}</span><span class="outside-currency">NT$${sub}</span></div>`;
   }).join('');
 
-  const orderRows = orders.map(o=>{
+  const customRows = customOrders.map(o=>{
     const sub = orderTotal(o, menu);
     const itemInputs = menu.map(mi=>`
       <span class="qty-item">
@@ -894,7 +927,7 @@ function renderStaffEventCard(ev){
       <div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span><span>由 ${escapeHtml(ev.createdBy||'')}</span>${ev.lastEditBy?`<span>最後編輯：${escapeHtml(ev.lastEditBy)} · ${fmtTime(ev.lastEditAt)}</span>`:''}</div>
     </div>
     <div class="event-body">
-      <div class="section-label">菜單選項（同學下單時會直接套用金額）</div>
+      <div class="section-label">菜單選項（設定好後，同學會在自己的介面自行選取）</div>
       <div class="chips">${menuChips || '<span class="other-label">尚未新增選項，請先在下方新增</span>'}</div>
       <div class="add-name-row">
         <input type="text" placeholder="品項名稱" data-role="menu-name" data-event="${ev.id}" style="flex:2;">
@@ -902,10 +935,11 @@ function renderStaffEventCard(ev){
         <button data-action="add-menu-item" data-event="${ev.id}">新增選項</button>
       </div>
 
-      <div class="section-label" style="margin-top:12px;">快速加入座號（點座號把人加進下方名單）</div>
-      <div class="number-grid">${grid}</div>
+      <div class="section-label" style="margin-top:12px;">座號同學訂購狀況（由同學自行選取，此處僅顯示，無法在此代填）</div>
+      ${rosterOrders.length ? `<div class="outside-list">${rosterRows}</div>` : `<div class="other-label">目前還沒有同學下單</div>`}
 
-      ${orders.length ? `<div class="outside-list">${orderRows}</div>` : ''}
+      <div class="section-label" style="margin-top:12px;">其他訂購人（非座號名單，可在此手動設定數量）</div>
+      ${customOrders.length ? `<div class="outside-list">${customRows}</div>` : ''}
       <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="event-name-input" data-event="${ev.id}"><button data-action="add-event-name" data-event="${ev.id}">新增</button></div>
       <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}</div>
     </div>
@@ -953,39 +987,60 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     if(collapsedDates.has(date)) collapsedDates.delete(date); else collapsedDates.add(date);
     render();
   }
-  else if(action==='toggle-num'){
+  else if(action==='cycle-status'){
     const label=el.dataset.label;
-    const collName = meal==='lunch'?'lunch_off':'dinner_off';
-    const list = meal==='lunch'?lunchOff:dinnerOff;
+    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
+    const list = meal==='lunch'?lunchChoice:dinnerChoice;
     const existing=(list[date]||[]).find(o=>o.id===label);
+    const order=['meat','veg','cancel',null];
+    const idx = existing ? order.indexOf(existing.status) : -1;
+    const next = order[(idx+1)%order.length];
     const ref=doc(db,'entries',date,collName,label);
-    if(existing) await deleteDoc(ref);
-    else await setDoc(ref, {studentId:label, name:label, date, addedBy:identity(), addedAt:new Date().toISOString()});
+    if(next===null){ await deleteDoc(ref); }
+    else{
+      await setDoc(ref, {
+        seatNo:label, studentId:label, name: existing?(existing.name||label):label, status:next,
+        note: existing?(existing.note||''):'', date, updatedBy:identity(), updatedAt:new Date().toISOString()
+      }, {merge:true});
+    }
     await touchEntry(date);
   }
-  else if(action==='student-toggle'){
-    const collName = meal==='lunch'?'lunch_off':'dinner_off';
-    const list = meal==='lunch'?lunchOff:dinnerOff;
+  else if(action==='choose-status'){
+    const status=el.dataset.status;
+    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
+    const list = meal==='lunch'?lunchChoice:dinnerChoice;
     const existing=(list[date]||[]).find(o=>o.id===studentId);
     const ref=doc(db,'entries',date,collName,studentId);
-    if(existing){ await deleteDoc(ref); showToast('已取消退餐標記'); }
-    else{ await setDoc(ref,{studentId,name:studentId,date,addedBy:identity(),addedAt:new Date().toISOString()}); showToast('已標記退餐'); }
+    if(existing && existing.status===status){
+      await deleteDoc(ref);
+      showToast('已取消選擇');
+    } else {
+      await setDoc(ref, {
+        seatNo:studentId, studentId, name:studentId, status,
+        note: existing?(existing.note||''):'', date, updatedBy:identity(), updatedAt:new Date().toISOString()
+      }, {merge:true});
+      showToast(status==='cancel'?'已標記退餐':(status==='meat'?'已選擇葷食':'已選擇素食'));
+    }
   }
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
   else if(action==='copy-last-week'){ ev.stopPropagation(); await applyLastWeekTo(date); }
   else if(action==='add-name'){
     const input=document.querySelector(`input[data-action="name-input"][data-date="${date}"][data-meal="${meal}"]`);
     const name=input.value.trim(); if(!name) return;
-    const collName = meal==='lunch'?'lunch_off':'dinner_off';
+    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const id='other__'+uid();
-    await setDoc(doc(db,'entries',date,collName,id), {studentId:id, name, date, addedBy:identity(), addedAt:new Date().toISOString()});
+    await setDoc(doc(db,'entries',date,collName,id), {seatNo:id, studentId:id, name, status:'unset', note:'', date, updatedBy:identity(), updatedAt:new Date().toISOString()});
     await touchEntry(date);
     input.value='';
   }
-  else if(action==='remove-name'){
-    const collName = meal==='lunch'?'lunch_off':'dinner_off';
+  else if(action==='remove-choice'){
+    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     await deleteDoc(doc(db,'entries',date,collName,el.dataset.id));
     await touchEntry(date);
+  }
+  else if(action==='clear-note'){
+    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
+    await updateDoc(doc(db,'entries',date,collName,el.dataset.id), {note:'', updatedBy:identity(), updatedAt:new Date().toISOString()});
   }
   else if(action==='view-shot'){ document.getElementById('modal-img').src=el.dataset.src; document.getElementById('modal-bg').classList.add('show'); }
   else if(action==='remove-shot'){
@@ -1005,7 +1060,6 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     await addMenuItem(eventId, name, price);
   }
   else if(action==='remove-menu-item'){ await removeMenuItem(eventId, el.dataset.item); }
-  else if(action==='add-participant'){ await ensureParticipant(eventId, el.dataset.label); }
   else if(action==='remove-participant'){ await removeParticipant(eventId, el.dataset.id); }
   else if(action==='add-event-name'){
     const input=document.querySelector(`input[data-action="event-name-input"][data-event="${eventId}"]`);
@@ -1020,9 +1074,9 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
     ev.preventDefault();
     const date=ev.target.dataset.date, meal=ev.target.dataset.meal, name=ev.target.value.trim();
     if(!name) return;
-    const collName = meal==='lunch'?'lunch_off':'dinner_off';
+    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const id='other__'+uid();
-    await setDoc(doc(db,'entries',date,collName,id), {studentId:id, name, date, addedBy:identity(), addedAt:new Date().toISOString()});
+    await setDoc(doc(db,'entries',date,collName,id), {seatNo:id, studentId:id, name, status:'unset', note:'', date, updatedBy:identity(), updatedAt:new Date().toISOString()});
     await touchEntry(date);
     ev.target.value='';
   }
@@ -1036,10 +1090,10 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
 });
 
 document.getElementById('content').addEventListener('change', async (ev)=>{
-  if(ev.target.dataset.action==='order-count'){
-    const date=ev.target.dataset.date, meal=ev.target.dataset.meal, val=ev.target.value;
-    const orderCount = val===''?null:Number(val);
-    await updateDoc(doc(db,'entries',date), {[meal+'.orderCount']:orderCount, lastEditBy:identity(), lastEditAt:new Date().toISOString()});
+  if(ev.target.dataset.action==='note-input'){
+    const date=ev.target.dataset.date, meal=ev.target.dataset.meal;
+    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
+    await setDoc(doc(db,'entries',date,collName,studentId), {note:ev.target.value, updatedBy:identity(), updatedAt:new Date().toISOString()}, {merge:true});
   }
   else if(ev.target.dataset.action==='item-qty'){
     await setItemQty(ev.target.dataset.event, ev.target.dataset.label, ev.target.dataset.item, ev.target.value);
