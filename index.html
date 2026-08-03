@@ -76,6 +76,7 @@
   .meal-card.lunch{background:var(--lunch-bg);}
   .meal-card.dinner{background:var(--dinner-bg);}
   .meal-title{font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:6px;margin-bottom:10px;}
+  .meal-title .meal-copy-btn{margin-left:auto;font-family:'Noto Sans TC',sans-serif;font-weight:500;font-size:11px;}
   .meal-card.lunch .meal-title{color:var(--lunch);}
   .meal-card.dinner .meal-title{color:var(--dinner);}
   .dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
@@ -630,15 +631,26 @@ async function applyLastWeekTo(dateStr){
   await touchEntry(dateStr);
   showToast('已套用上週同星期資料');
 }
-async function applyPrevDayTo(dateStr){
-  // 伙委專用：找「這個日期之前、最近一次有建立紀錄」的那一天（通常就是昨天，
-  // 如果昨天沒上課就會抓最近一次有上課的那天），把全班的午晚餐選擇整批複製過來。
-  const prevKeys = Object.keys(entries).filter(k=>k<dateStr).sort((a,b)=>b.localeCompare(a));
+async function copyMealBetweenDates(fromKey, toDateStr, meal){
+  const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
+  const list = meal==='lunch'?lunchChoice:dinnerChoice;
+  const batch=writeBatch(db);
+  (list[fromKey]||[]).forEach(o=>{
+    batch.set(doc(db,'entries',toDateStr,collName,o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
+  });
+  await batch.commit();
+}
+async function applyPrevDayTo(dateStr, meal){
+  // 伙委專用（分午餐/晚餐各自獨立）：找「這個日期之前、最近一次有這個餐別紀錄」的那一天
+  // （通常就是昨天，如果昨天沒上課就會抓最近一次有上課的那天），把全班這個餐別的選擇複製過來。
+  const label = meal==='lunch'?'午餐':'晚餐';
+  const list = meal==='lunch'?lunchChoice:dinnerChoice;
+  const prevKeys = Object.keys(list).filter(k=>k<dateStr).sort((a,b)=>b.localeCompare(a));
   const prevKey = prevKeys[0];
-  if(!prevKey){ showToast('找不到更早的紀錄可以套用'); return; }
-  await copyChoiceBetweenDates(prevKey, dateStr);
+  if(!prevKey){ showToast('找不到更早的'+label+'紀錄可以套用'); return; }
+  await copyMealBetweenDates(prevKey, dateStr, meal);
   await touchEntry(dateStr);
-  showToast('已套用「'+formatMD(parseDate(prevKey))+'」的資料');
+  showToast('已套用「'+formatMD(parseDate(prevKey))+'」的'+label+'資料');
 }
 async function addWeek(anchorDateStr){
   if(!anchorDateStr) return;
@@ -971,7 +983,7 @@ function renderStaffDateCard(date){
       </div>
     </div>
     <div class="date-foot">
-      <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button><button class="copy-last-btn" data-action="copy-prev-day" data-date="${date}">跟前一天一樣</button><button class="copy-last-btn" data-action="copy-last-week" data-date="${date}">套用上週同星期</button></div>
+      <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button><button class="copy-last-btn" data-action="copy-last-week" data-date="${date}">套用上週同星期</button></div>
       <span class="edit-tag">${e.lastEditBy?'最後編輯：'+escapeHtml(e.lastEditBy)+' · '+fmtTime(e.lastEditAt):''}</span>
     </div>
   </div>`;
@@ -994,7 +1006,7 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
   const screenshot = m.screenshot || null;
   return `
   <div class="meal-card ${meal}">
-    <div class="meal-title"><span class="dot"></span>${label}</div>
+    <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button></div>
     <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人・尚未選擇 <b>${counts.unset}</b> 人</div>
     <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 未選）</div>
     <div class="number-grid">${grid}</div>
@@ -1291,7 +1303,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
   else if(action==='delete-week'){ ev.stopPropagation(); await deleteWeek(el.dataset.week); }
   else if(action==='copy-last-week'){ ev.stopPropagation(); await applyLastWeekTo(date); }
-  else if(action==='copy-prev-day'){ ev.stopPropagation(); await applyPrevDayTo(date); }
+  else if(action==='copy-prev-day-meal'){ ev.stopPropagation(); await applyPrevDayTo(date, meal); }
   else if(action==='add-name'){
     const input=document.querySelector(`input[data-action="name-input"][data-date="${date}"][data-meal="${meal}"]`);
     const name=input.value.trim(); if(!name) return;
