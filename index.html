@@ -101,6 +101,7 @@
   .number-cell.cancel{background:#fff;color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
   .meal-summary{font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.7;}
   .meal-summary b{color:var(--ink);}
+  .same-as-btn{display:block;width:100%;font-family:inherit;border:1px dashed var(--outside);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;background:var(--outside-bg);color:var(--outside);cursor:pointer;margin-bottom:8px;text-align:center;}
   .choice-buttons{display:flex;gap:8px;margin-bottom:8px;}
   .choice-btn{flex:1;font-family:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 6px;font-size:13px;font-weight:700;background:#fff;color:var(--ink-soft);cursor:pointer;text-align:center;}
   .meal-card.lunch .choice-btn.active.meat{background:var(--lunch);color:#fff;border-color:var(--lunch);}
@@ -884,6 +885,18 @@ function renderStudentDateCard(date){
   </div>`;
 }
 
+// 找這個人在某餐別「最近一次有選擇」的紀錄（可能是昨天，也可能是最近一次有到校的那天），
+// 用來讓同學一鍵套用「跟上次一樣」，不用每天重新點選。
+function findPrevChoice(date, meal, sid){
+  const list = meal==='lunch'?lunchChoice:dinnerChoice;
+  const keys = Object.keys(list).filter(k=>k<date).sort((a,b)=>b.localeCompare(a));
+  for(const k of keys){
+    const mine=(list[k]||[]).find(c=>c.id===sid && c.status);
+    if(mine) return {status:mine.status, note:mine.note||'', dateKey:k};
+  }
+  return null;
+}
+
 function renderStudentMealCard(date, meal, label, m, choiceList){
   const mine=choiceList.find(c=>c.id===studentId);
   const savedStatus=mine?mine.status:'';
@@ -898,9 +911,20 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
   if(dirty) statusLine='已選擇「'+(STATUS_LABEL[status]||'取消選擇')+'」，尚未送出（僅暫存於本機）';
   else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
   else statusLine='尚未選擇';
+
+  const prev = findPrevChoice(date, meal, studentId);
+  let sameAsBtn = '';
+  if(prev && (prev.status!==status || prev.note!==note)){
+    const yesterdayKey = toKey((()=>{const d=parseDate(date); d.setDate(d.getDate()-1); return d;})());
+    const pObj = parseDate(prev.dateKey);
+    const dateLabel = prev.dateKey===yesterdayKey ? '昨天' : (formatMD(pObj)+'（週'+WD[pObj.getDay()]+'）');
+    sameAsBtn = `<button type="button" class="same-as-btn" data-action="same-as-prev" data-date="${date}" data-meal="${meal}" data-status="${prev.status}" data-note="${escapeHtml(prev.note)}">🔁 跟${dateLabel}一樣（${STATUS_LABEL[prev.status]||''}）</button>`;
+  }
+
   return `
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}</div>
+    ${sameAsBtn}
     <div class="choice-buttons">
       <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="meat">🍖 葷食</button>
       <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="veg">🥦 素食</button>
@@ -1080,6 +1104,19 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const current = draftChoice[key] || {status:savedStatus, note:savedNote};
     const newStatus = current.status===status ? '' : status; // 再點一次同一個 = 取消選擇
     draftChoice[key] = {status:newStatus, note:current.note};
+    if(draftChoice[key].status===savedStatus && draftChoice[key].note===savedNote){ delete draftChoice[key]; }
+    render();
+  }
+  else if(action==='same-as-prev'){
+    // 一鍵套用「跟上次一樣」，同樣只更新本機暫存，要按「確定送出」才會真的寫入
+    const status=el.dataset.status;
+    const note=el.dataset.note||'';
+    const key=date+'|'+meal;
+    const list = meal==='lunch'?lunchChoice:dinnerChoice;
+    const existing=(list[date]||[]).find(o=>o.id===studentId);
+    const savedStatus = existing?existing.status:'';
+    const savedNote = existing?(existing.note||''):'';
+    draftChoice[key] = {status, note};
     if(draftChoice[key].status===savedStatus && draftChoice[key].note===savedNote){ delete draftChoice[key]; }
     render();
   }
