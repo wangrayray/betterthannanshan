@@ -6,6 +6,15 @@
 <title>班務系統｜退餐與外食訂購</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<script>
+  // Google Maps JavaScript API 官方 bootstrap loader，實際的 maps/places 函式庫
+  // 只有在打開「開啟地圖選餐廳」時才會用 google.maps.importLibrary() 動態載入，
+  // 平常瀏覽網頁不會先載入整包地圖程式碼，比較省流量／API 用量。
+  (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+    key: "AIzaSyD5ttp2vBWt7talUbzy2mQTYJuv_V8GxFM",
+    v: "weekly"
+  });
+</script>
 <style>
   :root{
     --bg:#EDF0E6; --paper:#FFFFFF; --paper-soft:#F6F7F1;
@@ -178,6 +187,15 @@
   .rec-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
   .rec-map-link{font-size:11px;color:var(--outside);text-decoration:none;white-space:nowrap;}
   .rec-vote-btn{border:1px solid var(--line);background:var(--paper-soft);border-radius:20px;padding:4px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;}
+  .gmap-modal-box{background:var(--paper);border-radius:14px;padding:16px;width:100%;max-width:520px;box-shadow:var(--shadow);margin:auto;}
+  .gmap-modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .gmap-modal-head h3{margin:0;font-family:'Zen Maru Gothic',sans-serif;font-size:16px;}
+  .gmap-modal-head button{border:none;background:none;font-size:18px;cursor:pointer;color:var(--ink-soft);}
+  #gmap-search-input{width:100%;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13.5px;margin-bottom:8px;}
+  #gmap-canvas{width:100%;height:320px;border-radius:10px;background:var(--paper-soft);margin-bottom:8px;}
+  #gmap-selected-info{font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;min-height:18px;}
+  #gmap-confirm-btn{width:100%;}
+  #gmap-confirm-btn:disabled{opacity:.5;cursor:not-allowed;}
   .event-delete{padding:8px 16px 14px;text-align:right;}
   .qty-item{display:flex;align-items:center;gap:5px;background:var(--paper-soft);border-radius:7px;padding:3px 3px 3px 8px;}
   .qty-item-name{font-size:11.5px;color:var(--ink-soft);}
@@ -245,6 +263,16 @@
 </div>
 
 <div class="modal-bg" id="modal-bg"><img id="modal-img" src="" alt=""></div>
+
+<div class="modal-bg" id="gmap-modal-bg">
+  <div class="gmap-modal-box">
+    <div class="gmap-modal-head"><h3>📍 選擇餐廳</h3><button type="button" id="gmap-modal-close">✕</button></div>
+    <input type="text" id="gmap-search-input" placeholder="搜尋店名或地址…">
+    <div id="gmap-canvas"></div>
+    <div id="gmap-selected-info"></div>
+    <button type="button" class="btn btn-primary" id="gmap-confirm-btn" disabled>✅ 推薦這個地點</button>
+  </div>
+</div>
 
 <div class="modal-bg" id="settings-bg">
   <div class="panel">
@@ -351,9 +379,13 @@ let dinnerChoice = {};  // date -> [...]
 let events = {};        // id -> {id,title,createdAt,createdBy,lastEditBy,lastEditAt}
 let eventMenu = {};     // eventId -> [{id,name,price}]
 let eventOrders = {};   // eventId -> [{id,studentId,name,items,updatedAt}]
-let eventRecommendations = {}; // eventId -> [{id,name,address,lat,lon,count,...}] 餐廳推薦，同名同址自動累計 count
-let searchResults = {}; // eventId -> 暫存的「附近餐廳／搜尋店名」結果，只是本機暫存，不會寫入 Firestore
-let userLocation = null; // {lat,lon} 最近一次定位結果，用來把搜尋結果依距離排序（越近越前面）
+let eventRecommendations = {}; // eventId -> [{id,name,address,lat,lon,voters,...}] 餐廳推薦，同名同址自動累計次數
+let userLocation = null; // {lat,lon} 最近一次定位結果，用來把地圖預設中心點設在使用者附近
+let gmap = null, gmapMarker = null, gmapInfoWindow = null, gmapPlacesService = null, gmapAutocompleteEl = null;
+let gmapNearbyMarkers = [];
+let gmapSelectedPlace = null; // 目前在地圖上選取、還沒送出的餐廳 {name,address,lat,lng}
+let gmapModalEventId = null;  // 目前地圖視窗是為了哪個外食活動打開的
+let gmapLibLoaded = false;
 let settings = { rosterSize:49, includeTeacher:true };
 let studentsRoster = {}; // studentId -> {name}
 let staffList = {};      // email -> {name}
@@ -505,7 +537,7 @@ function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); un
 function teardownState(){
   teardownListeners();
   entries={}; lunchChoice={}; dinnerChoice={}; events={}; eventMenu={}; eventOrders={};
-  eventRecommendations={}; searchResults={};
+  eventRecommendations={};
   studentsRoster={}; staffList={}; eventCoordinators={}; draftChoice={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
@@ -834,11 +866,8 @@ async function deleteEvent(id){
 function eventTotal(ev){ return (eventOrders[ev.id]||[]).reduce((s,o)=>s+orderTotal(o, eventMenu[ev.id]||[]),0); }
 
 // ============================================================
-// 餐廳推薦（用免費的 OpenStreetMap，不需要申請 Google Maps API 金鑰/信用卡）
-// - Overpass API：查詢目前位置附近的餐廳/小吃/咖啡廳
-// - Nominatim API：依店名搜尋地點（地理編碼）
-// 兩個都是 OSM 社群提供的公用免費伺服器，正式大量使用建議之後改自架，
-// 但一個班級的使用量遠低於他們的公平使用原則，可以直接用。
+// 餐廳推薦（改用 Google Maps／Places，把地圖直接嵌進系統，
+// 同學可以點地圖上的店家、或搜尋店名，選好後直接推薦）
 // ============================================================
 function simpleHash(str){
   let h=0;
@@ -855,49 +884,99 @@ function getUserLocation(){
     );
   });
 }
-function distanceMeters(lat1, lon1, lat2, lon2){
-  const R=6371000;
-  const toRad=d=>d*Math.PI/180;
-  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
-  const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// 只有在真正打開地圖視窗時才會呼叫，動態載入 maps/places/marker 函式庫，
+// 只需要載入一次，之後重複打開視窗會直接重用。
+async function ensureGoogleMapsLoaded(){
+  if(gmapLibLoaded) return;
+  await Promise.all([
+    google.maps.importLibrary('maps'),
+    google.maps.importLibrary('places'),
+    google.maps.importLibrary('marker')
+  ]);
+  gmapLibLoaded = true;
 }
-function formatDistance(m){
-  if(m==null||isNaN(m)) return '';
-  return m<1000 ? Math.round(m)+' 公尺' : (m/1000).toFixed(1)+' 公里';
-}
-// 有定位資料的話，把搜尋結果依照「離我目前位置的距離」由近到遠排序；
-// 沒有 lat/lon 或還沒定位成功的項目排在最後面，不影響其他項目的排序。
-function sortByDistanceFromUser(list){
-  if(!userLocation) return list;
-  return list.map(r=>({
-    ...r,
-    distance: (r.lat!=null && r.lon!=null && !isNaN(r.lat) && !isNaN(r.lon)) ? distanceMeters(userLocation.lat, userLocation.lon, r.lat, r.lon) : null
-  })).sort((a,b)=>{
-    if(a.distance==null && b.distance==null) return 0;
-    if(a.distance==null) return 1;
-    if(b.distance==null) return -1;
-    return a.distance-b.distance;
+function initGmapIfNeeded(){
+  if(gmap) return;
+  const center = userLocation ? {lat:userLocation.lat, lng:userLocation.lon} : {lat:25.0330, lng:121.5654};
+  gmap = new google.maps.Map(document.getElementById('gmap-canvas'), {
+    center, zoom:16, mapTypeControl:false, streetViewControl:false, fullscreenControl:false
+  });
+  gmapMarker = new google.maps.Marker({map:gmap});
+  gmapInfoWindow = new google.maps.InfoWindow();
+  gmapPlacesService = new google.maps.places.PlacesService(gmap);
+
+  // 點地圖上 Google 本來就標好的店家名稱（POI），直接選取那間店
+  gmap.addListener('click', (e)=>{
+    if(e.placeId){
+      e.stop();
+      gmapPlacesService.getDetails({placeId:e.placeId, fields:['name','formatted_address','geometry']}, (place, status)=>{
+        if(status==='OK' && place && place.geometry){
+          selectGmapPlace(place.name, place.formatted_address, place.geometry.location.lat(), place.geometry.location.lng());
+        }
+      });
+    }
+  });
+
+  const input = document.getElementById('gmap-search-input');
+  gmapAutocompleteEl = new google.maps.places.Autocomplete(input, {
+    fields:['name','formatted_address','geometry'],
+    componentRestrictions:{country:'tw'}
+  });
+  gmapAutocompleteEl.bindTo('bounds', gmap);
+  gmapAutocompleteEl.addListener('place_changed', ()=>{
+    const place = gmapAutocompleteEl.getPlace();
+    if(place && place.geometry){
+      selectGmapPlace(place.name, place.formatted_address, place.geometry.location.lat(), place.geometry.location.lng());
+      gmap.setCenter(place.geometry.location);
+      gmap.setZoom(17);
+    }
   });
 }
-async function searchNearbyRestaurants(lat, lon, radius){
-  const q = `[out:json][timeout:20];(node["amenity"="restaurant"](around:${radius},${lat},${lon});node["amenity"="fast_food"](around:${radius},${lat},${lon});node["amenity"="cafe"](around:${radius},${lat},${lon}););out center;`;
-  const res = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data='+encodeURIComponent(q)});
-  if(!res.ok) throw new Error('查詢附近餐廳失敗，請稍後再試');
-  const data = await res.json();
-  return (data.elements||[])
-    .map(el=>{
-      const tags=el.tags||{};
-      const addrParts=[tags['addr:city'],tags['addr:district'],tags['addr:street'],tags['addr:housenumber']].filter(Boolean);
-      return { name: tags.name||'', address: addrParts.join(''), lat: el.lat, lon: el.lon };
-    })
-    .filter(r=>r.name);
+// 在目前地圖中心點附近找餐廳，用橘色圖釘標出來，點圖釘就直接選取那家店
+function refreshNearbyRestaurantMarkers(){
+  const center = gmap.getCenter();
+  gmapPlacesService.nearbySearch({location:center, radius:800, type:'restaurant'}, (results, status)=>{
+    (gmapNearbyMarkers||[]).forEach(m=>m.setMap(null));
+    gmapNearbyMarkers = [];
+    if(status!=='OK' || !results) return;
+    gmapNearbyMarkers = results.slice(0,20).filter(p=>p.geometry).map(place=>{
+      const m = new google.maps.Marker({
+        map: gmap, position: place.geometry.location,
+        icon: {url:'https://maps.google.com/mapfiles/ms/icons/orange-dot.png'}
+      });
+      m.addListener('click', ()=>{
+        selectGmapPlace(place.name, place.vicinity||'', place.geometry.location.lat(), place.geometry.location.lng());
+      });
+      return m;
+    });
+  });
 }
-async function searchPlaceByName(qStr){
-  const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=8&addressdetails=0&countrycodes=tw&q='+encodeURIComponent(qStr));
-  if(!res.ok) throw new Error('搜尋失敗，請稍後再試');
-  const data = await res.json();
-  return (data||[]).map(r=>({ name:(r.display_name||'').split(',')[0].trim(), address:r.display_name||'', lat:Number(r.lat), lon:Number(r.lon) }));
+function selectGmapPlace(name, address, lat, lng){
+  gmapSelectedPlace = {name, address: address||'', lat, lng};
+  gmapMarker.setPosition({lat,lng});
+  gmapMarker.setMap(gmap);
+  gmap.panTo({lat,lng});
+  document.getElementById('gmap-selected-info').textContent = '已選取：'+name+(address?'（'+address+'）':'');
+  document.getElementById('gmap-confirm-btn').disabled = false;
+}
+async function openMapModal(eventId){
+  gmapModalEventId = eventId;
+  gmapSelectedPlace = null;
+  document.getElementById('gmap-selected-info').textContent = '點地圖上的店家、或用上面搜尋框找餐廳，選好後按下面「推薦這個地點」';
+  document.getElementById('gmap-confirm-btn').disabled = true;
+  document.getElementById('gmap-search-input').value = '';
+  document.getElementById('gmap-modal-bg').classList.add('show');
+  try{
+    await ensureGoogleMapsLoaded();
+    initGmapIfNeeded();
+    google.maps.event.trigger(gmap, 'resize');
+    try{ await getUserLocation(); gmap.setCenter({lat:userLocation.lat, lng:userLocation.lon}); }
+    catch(err){ /* 定位失敗就用預設中心，不阻擋地圖使用 */ }
+    refreshNearbyRestaurantMarkers();
+  }catch(err){
+    console.error(err);
+    showToast('地圖載入失敗：'+(err.message||'請確認網路連線'));
+  }
 }
 // 每個人（伙委用 email、同學用座號）在同一個活動裡「限推薦一家餐廳」，
 // 用 voters 這個 map 記錄「誰投過」，票數用 voters 的筆數計算。
@@ -1131,16 +1210,6 @@ function renderEventTab(){
 function renderRecommendSection(eventId, canDelete){
   const voteCountOf = r => r.voters ? Object.keys(r.voters).length : (r.count||1);
   const recs = (eventRecommendations[eventId]||[]).slice().sort((a,b)=>voteCountOf(b)-voteCountOf(a));
-  const results = searchResults[eventId]||[];
-
-  const resultsHtml = results.length ? `
-    <div class="rec-search-results">
-      ${results.map((r,i)=>`
-        <div class="rec-result-row">
-          <div class="rec-info"><span class="rec-name">${escapeHtml(r.name||'（無名稱）')}${(r.distance!=null)?`<span class="rec-distance">${formatDistance(r.distance)}</span>`:''}</span>${r.address?`<div class="rec-address">${escapeHtml(r.address)}</div>`:''}</div>
-          <button type="button" class="btn btn-outside" data-action="pick-restaurant-result" data-event="${eventId}" data-index="${i}">我要推薦</button>
-        </div>`).join('')}
-    </div>` : '';
 
   const listHtml = recs.length ? `
     <div class="rec-list">
@@ -1151,7 +1220,7 @@ function renderRecommendSection(eventId, canDelete){
             ${r.address?`<div class="rec-address">${escapeHtml(r.address)}</div>`:''}
           </div>
           <div class="rec-actions">
-            ${(r.lat&&r.lon)?`<a class="rec-map-link" href="https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lon}#map=18/${r.lat}/${r.lon}" target="_blank" rel="noopener">🗺️ 地圖</a>`:''}
+            ${(r.lat&&r.lon)?`<a class="rec-map-link" href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lon}" target="_blank" rel="noopener">🗺️ 地圖</a>`:''}
             <button type="button" class="rec-vote-btn" data-action="vote-recommend" data-event="${eventId}" data-id="${r.id}">👍 +1</button>
             ${canDelete?`<button type="button" class="outside-remove" data-action="remove-recommend" data-event="${eventId}" data-id="${r.id}">×</button>`:''}
           </div>
@@ -1160,13 +1229,10 @@ function renderRecommendSection(eventId, canDelete){
 
   return `
   <div class="rec-section">
-    <div class="section-label">🍽️ 餐廳推薦（找附近餐廳或搜尋店名，推薦後同名同地址會自動累計次數，每人限推薦一家，改推薦別家會自動換掉原本那家）</div>
+    <div class="section-label">🍽️ 餐廳推薦（用 Google 地圖選餐廳，推薦後同名同地址會自動累計次數，每人限推薦一家，改推薦別家會自動換掉原本那家）</div>
     <div class="rec-search-row">
-      <button type="button" class="btn btn-ghost" data-action="find-nearby" data-event="${eventId}">📍 找我附近的餐廳</button>
-      <input type="text" class="rec-search-input" placeholder="或輸入店名搜尋" data-action="rec-search-input" data-event="${eventId}">
-      <button type="button" class="btn btn-ghost" data-action="search-restaurant-name" data-event="${eventId}">搜尋</button>
+      <button type="button" class="btn btn-outside" data-action="open-map-modal" data-event="${eventId}">📍 開啟地圖選餐廳</button>
     </div>
-    ${resultsHtml}
     <div class="rec-manual-row">
       <input type="text" class="rec-manual-input" placeholder="地圖上找不到？直接輸入餐廳名稱推薦" data-action="rec-manual-input" data-event="${eventId}">
       <button type="button" class="btn btn-outside" data-action="recommend-manual" data-event="${eventId}">直接推薦</button>
@@ -1387,36 +1453,8 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     await addEventCustomName(eventId, name);
     input.value='';
   }
-  else if(action==='find-nearby'){
-    showToast('正在定位並搜尋附近餐廳…');
-    try{
-      await getUserLocation();
-      const list = await searchNearbyRestaurants(userLocation.lat, userLocation.lon, 800);
-      searchResults[eventId] = sortByDistanceFromUser(list);
-      if(list.length===0) showToast('附近 800 公尺內沒有找到餐廳資料（地圖資料庫可能不完整，可以改用店名搜尋）');
-      render();
-    }catch(err){ console.error(err); showToast(err.message); }
-  }
-  else if(action==='search-restaurant-name'){
-    const input=document.querySelector(`input[data-action="rec-search-input"][data-event="${eventId}"]`);
-    const q=input.value.trim();
-    if(!q){ showToast('請輸入要搜尋的店名'); return; }
-    if(!userLocation){
-      // 先嘗試定位，這樣搜尋結果才能依距離排序；定位失敗也不阻擋搜尋，只是不能排序。
-      try{ await getUserLocation(); }catch(err){ /* 忽略，continue without location */ }
-    }
-    const list = await searchPlaceByName(q);
-    searchResults[eventId] = sortByDistanceFromUser(list);
-    if(list.length===0) showToast('找不到符合的地點');
-    render();
-  }
-  else if(action==='pick-restaurant-result'){
-    const idx=Number(el.dataset.index);
-    const r=(searchResults[eventId]||[])[idx];
-    if(!r) return;
-    await recommendRestaurant(eventId, r.name, r.address, r.lat, r.lon);
-    delete searchResults[eventId];
-    render();
+  else if(action==='open-map-modal'){
+    await openMapModal(eventId);
   }
   else if(action==='recommend-manual'){
     const input=document.querySelector(`input[data-action="rec-manual-input"][data-event="${eventId}"]`);
@@ -1424,7 +1462,6 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     if(!name){ showToast('請輸入餐廳名稱'); return; }
     await recommendRestaurant(eventId, name, '', null, null);
     input.value='';
-    delete searchResults[eventId];
     render();
   }
   else if(action==='vote-recommend'){
@@ -1505,6 +1542,23 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
 });
 
 document.getElementById('modal-bg').addEventListener('click',()=>document.getElementById('modal-bg').classList.remove('show'));
+
+document.getElementById('gmap-modal-close').addEventListener('click', ()=>{
+  document.getElementById('gmap-modal-bg').classList.remove('show');
+});
+document.getElementById('gmap-modal-bg').addEventListener('click', (ev)=>{
+  if(ev.target.id==='gmap-modal-bg') document.getElementById('gmap-modal-bg').classList.remove('show');
+});
+document.getElementById('gmap-confirm-btn').addEventListener('click', async ()=>{
+  if(!gmapSelectedPlace || !gmapModalEventId) return;
+  try{
+    await recommendRestaurant(gmapModalEventId, gmapSelectedPlace.name, gmapSelectedPlace.address, gmapSelectedPlace.lat, gmapSelectedPlace.lng);
+    document.getElementById('gmap-modal-bg').classList.remove('show');
+  }catch(err){
+    console.error(err);
+    showToast('推薦失敗：'+(err.message||err.code||'未知錯誤'));
+  }
+});
 
 // settings
 function renderCoordinatorList(){
