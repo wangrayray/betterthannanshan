@@ -167,6 +167,7 @@
   .rec-info{display:flex;flex-direction:column;gap:1px;}
   .rec-name{font-size:13px;font-weight:700;}
   .rec-count{font-size:11.5px;color:var(--outside);font-weight:700;margin-left:6px;}
+  .rec-distance{font-size:11px;color:var(--mine);font-weight:700;margin-left:6px;}
   .rec-address{font-size:11px;color:var(--ink-soft);}
   .rec-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
   .rec-map-link{font-size:11px;color:var(--outside);text-decoration:none;white-space:nowrap;}
@@ -344,6 +345,7 @@ let eventMenu = {};     // eventId -> [{id,name,price}]
 let eventOrders = {};   // eventId -> [{id,studentId,name,items,updatedAt}]
 let eventRecommendations = {}; // eventId -> [{id,name,address,lat,lon,count,...}] 餐廳推薦，同名同址自動累計 count
 let searchResults = {}; // eventId -> 暫存的「附近餐廳／搜尋店名」結果，只是本機暫存，不會寫入 Firestore
+let userLocation = null; // {lat,lon} 最近一次定位結果，用來把搜尋結果依距離排序（越近越前面）
 let settings = { rosterSize:49, includeTeacher:true };
 let studentsRoster = {}; // studentId -> {name}
 let staffList = {};      // email -> {name}
@@ -807,6 +809,41 @@ function simpleHash(str){
   for(let i=0;i<str.length;i++){ h=(h*31+str.charCodeAt(i))|0; }
   return (h>>>0).toString(36);
 }
+function getUserLocation(){
+  return new Promise((resolve, reject)=>{
+    if(!navigator.geolocation){ reject(new Error('此瀏覽器不支援定位功能')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos=>{ userLocation={lat:pos.coords.latitude, lon:pos.coords.longitude}; resolve(userLocation); },
+      err=>reject(new Error('無法取得目前位置：'+err.message)),
+      {timeout:10000}
+    );
+  });
+}
+function distanceMeters(lat1, lon1, lat2, lon2){
+  const R=6371000;
+  const toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function formatDistance(m){
+  if(m==null||isNaN(m)) return '';
+  return m<1000 ? Math.round(m)+' 公尺' : (m/1000).toFixed(1)+' 公里';
+}
+// 有定位資料的話，把搜尋結果依照「離我目前位置的距離」由近到遠排序；
+// 沒有 lat/lon 或還沒定位成功的項目排在最後面，不影響其他項目的排序。
+function sortByDistanceFromUser(list){
+  if(!userLocation) return list;
+  return list.map(r=>({
+    ...r,
+    distance: (r.lat!=null && r.lon!=null && !isNaN(r.lat) && !isNaN(r.lon)) ? distanceMeters(userLocation.lat, userLocation.lon, r.lat, r.lon) : null
+  })).sort((a,b)=>{
+    if(a.distance==null && b.distance==null) return 0;
+    if(a.distance==null) return 1;
+    if(b.distance==null) return -1;
+    return a.distance-b.distance;
+  });
+}
 async function searchNearbyRestaurants(lat, lon, radius){
   const q = `[out:json][timeout:20];(node["amenity"="restaurant"](around:${radius},${lat},${lon});node["amenity"="fast_food"](around:${radius},${lat},${lon});node["amenity"="cafe"](around:${radius},${lat},${lon}););out center;`;
   const res = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data='+encodeURIComponent(q)});
@@ -1045,7 +1082,7 @@ function renderRecommendSection(eventId, canDelete){
     <div class="rec-search-results">
       ${results.map((r,i)=>`
         <div class="rec-result-row">
-          <div class="rec-info"><span class="rec-name">${escapeHtml(r.name||'（無名稱）')}</span>${r.address?`<div class="rec-address">${escapeHtml(r.address)}</div>`:''}</div>
+          <div class="rec-info"><span class="rec-name">${escapeHtml(r.name||'（無名稱）')}${(r.distance!=null)?`<span class="rec-distance">${formatDistance(r.distance)}</span>`:''}</span>${r.address?`<div class="rec-address">${escapeHtml(r.address)}</div>`:''}</div>
           <button type="button" class="btn btn-outside" data-action="pick-restaurant-result" data-event="${eventId}" data-index="${i}">我要推薦</button>
         </div>`).join('')}
     </div>` : '';
@@ -1292,23 +1329,25 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     input.value='';
   }
   else if(action==='find-nearby'){
-    if(!navigator.geolocation){ showToast('這個瀏覽器不支援定位功能'); return; }
     showToast('正在定位並搜尋附近餐廳…');
-    navigator.geolocation.getCurrentPosition(async (pos)=>{
-      try{
-        const list = await searchNearbyRestaurants(pos.coords.latitude, pos.coords.longitude, 800);
-        searchResults[eventId] = list;
-        if(list.length===0) showToast('附近 800 公尺內沒有找到餐廳資料（地圖資料庫可能不完整，可以改用店名搜尋）');
-        render();
-      }catch(err){ console.error(err); showToast('搜尋失敗：'+err.message); }
-    }, (err)=>{ showToast('無法取得目前位置：'+err.message); }, {timeout:10000});
+    try{
+      await getUserLocation();
+      const list = await searchNearbyRestaurants(userLocation.lat, userLocation.lon, 800);
+      searchResults[eventId] = sortByDistanceFromUser(list);
+      if(list.length===0) showToast('附近 800 公尺內沒有找到餐廳資料（地圖資料庫可能不完整，可以改用店名搜尋）');
+      render();
+    }catch(err){ console.error(err); showToast(err.message); }
   }
   else if(action==='search-restaurant-name'){
     const input=document.querySelector(`input[data-action="rec-search-input"][data-event="${eventId}"]`);
     const q=input.value.trim();
     if(!q){ showToast('請輸入要搜尋的店名'); return; }
+    if(!userLocation){
+      // 先嘗試定位，這樣搜尋結果才能依距離排序；定位失敗也不阻擋搜尋，只是不能排序。
+      try{ await getUserLocation(); }catch(err){ /* 忽略，continue without location */ }
+    }
     const list = await searchPlaceByName(q);
-    searchResults[eventId] = list;
+    searchResults[eventId] = sortByDistanceFromUser(list);
     if(list.length===0) showToast('找不到符合的地點');
     render();
   }
