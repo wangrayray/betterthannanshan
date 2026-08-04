@@ -173,11 +173,6 @@
   .switch.on .knob{left:22px;}
   .own-toggle .state-label{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
 
-  .shot-zone{border:1.5px dashed var(--line);border-radius:10px;background:rgba(255,255,255,.5);padding:8px;text-align:center;font-size:11.5px;color:var(--ink-soft);cursor:pointer;outline:none;margin-top:10px;}
-  .shot-zone img{width:100%;max-height:120px;object-fit:cover;border-radius:7px;display:block;margin-bottom:6px;}
-  .shot-actions{display:flex;gap:6px;justify-content:center;margin-top:4px;}
-  .shot-actions span{font-size:11px;text-decoration:underline;cursor:pointer;color:var(--ink-soft);}
-  .shot-actions span.danger{color:var(--danger);}
 
   .date-foot{padding:0 16px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
   .date-delete{border:none;background:none;color:var(--ink-soft);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;}
@@ -256,7 +251,6 @@
 
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:60;max-width:80vw;text-align:center;}
   .toast.show{opacity:1;}
-  input[type=file]{display:none;}
   .pending-note{font-size:11.5px;color:var(--danger);background:var(--danger-bg);border-radius:10px;padding:8px 12px;margin-bottom:14px;}
 </style>
 </head>
@@ -293,7 +287,6 @@
 
 </div>
 
-<div class="modal-bg" id="modal-bg"><img id="modal-img" src="" alt=""></div>
 
 <div class="modal-bg" id="gmap-modal-bg">
   <div class="gmap-modal-box">
@@ -329,7 +322,7 @@
     <div class="row">
       <label>外食訂購人（輸入座號，效期 14 天，到期自動失效）</label>
       <div style="display:flex;gap:6px;">
-        <input type="text" id="set-coordinator-seat" placeholder="座號，例如 05" style="flex:1;">
+        <input type="text" id="set-coordinator-seat" placeholder="座號，例如 47" style="flex:1;">
         <button class="btn btn-ghost" id="add-coordinator-btn" type="button">設定</button>
       </div>
       <div class="chips" id="coordinator-list" style="margin-top:8px;"></div>
@@ -356,7 +349,7 @@
     </div>
     <div class="role-block" id="role-block-student">
       <h4>🎓 同學登入</h4>
-      <div class="sub" style="margin-bottom:8px;">用你的座號登入（跟退餐點選格一樣，例如 05、師）。</div>
+      <div class="sub" style="margin-bottom:8px;">用你的座號登入（跟退餐點選格一樣，例如 47、師）。</div>
       <input type="text" id="student-id-input" placeholder="座號" autocomplete="username">
       <input type="password" id="student-pw-input" placeholder="密碼（至少 6 碼，請牢記）" autocomplete="current-password">
       <button class="btn btn-outside" id="student-login-btn">登入</button>
@@ -400,7 +393,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
-  collection, collectionGroup, getDocs, onSnapshot, writeBatch, Timestamp
+  collection, collectionGroup, getDocs, onSnapshot, writeBatch, runTransaction, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // 你的 Firebase 專案設定（已依你提供的內容填入）
@@ -493,7 +486,7 @@ function renderNotifPanel(){
   else{ setNotifLastSeen(new Date().toISOString()); }
   updateBellBadge();
 }
-let entries = {};      // date -> {date,lunch:{screenshot},dinner:{...},lastEditBy,lastEditAt}
+let entries = {};      // date -> {date,lunch:{},dinner:{},lastEditBy,lastEditAt}
 let lunchChoice = {};   // date -> [{id,seatNo,name,status:'meat'|'veg'|'cancel',note,updatedBy,updatedAt}]
 let dinnerChoice = {};  // date -> [...]
 let events = {};        // id -> {id,title,createdAt,createdBy,lastEditBy,lastEditAt}
@@ -751,7 +744,7 @@ const TUTORIAL_STEPS = [
       <div class="rec-list"><div class="rec-row"><div class="rec-info"><span class="rec-name">阿明雞排<span class="rec-count">×3</span></span></div></div></div>
     </div>` },
   { title:'登出／切換帳號', desc:'這裡可以登出，或是切換成別的座號登入（例如借同學的裝置時）。',
-    stageHtml:`<div class="id-bar" style="margin:0;">身份：<b>同學・座號 05</b><button class="tutorial-target" style="text-decoration:underline;background:none;border:none;color:var(--ink-soft);font-size:12px;">登出 / 切換帳號</button></div>` },
+    stageHtml:`<div class="id-bar" style="margin:0;">身份：<b>同學・座號 47</b><button class="tutorial-target" style="text-decoration:underline;background:none;border:none;color:var(--ink-soft);font-size:12px;">登出 / 切換帳號</button></div>` },
   { title:'教學結束 🎉', desc:'之後如果想再看一次，可以點畫面上方的「📖 新手教學」重新開始。' }
 ];
 const STAFF_TUTORIAL_STEPS = [
@@ -761,9 +754,9 @@ const STAFF_TUTORIAL_STEPS = [
       <div class="meal-title"><span class="dot"></span>午餐（示範）</div>
       <div class="section-label">點座號切換狀態</div>
       <div class="number-grid tutorial-target" style="display:inline-flex;">
-        <span class="number-cell meat">05</span>
+        <span class="number-cell meat">47</span>
       </div>
-      <div class="number-grid" style="margin-top:2px;"><span class="number-cell unset">06</span><span class="number-cell cancel">07</span></div>
+      <div class="number-grid" style="margin-top:2px;"><span class="number-cell unset">48</span><span class="number-cell cancel">49</span></div>
     </div>` },
   { title:'建立日期紀錄', desc:'選好日期後可以新增單日，或直接建立一整週（一～五），會自動延續上週的名單，不用每週重新設定一次。',
     stageHtml:`<div class="add-bar" style="margin:0;max-width:340px;">
@@ -784,7 +777,7 @@ const STAFF_TUTORIAL_STEPS = [
   { title:'備註欄', desc:'每天可以留一段文字備註給其他伙委看，例如誰請假、誰有特殊需求；只有伙委看得到，同學看不到。',
     stageHtml:`<div class="date-note" style="max-width:300px;">
       <label class="note-label">備註（伙委內部使用）</label>
-      <textarea class="date-note-input tutorial-target">05 號請假、43 號晚餐加訂...</textarea>
+      <textarea class="date-note-input tutorial-target">47 號請假、43 號晚餐加訂...</textarea>
     </div>` },
   { title:'退餐通知', desc:'右上角這個鈴鐺，會顯示目前有幾筆退餐你還沒看過；點開會列出誰在哪一天、哪個時段退餐，不用自己逐格檢查。',
     stageHtml:`<div class="id-bar" style="margin:0;"><button class="bell-btn tutorial-target" style="margin-left:0;">🔔<span class="bell-badge show">3</span></button></div>` },
@@ -794,7 +787,7 @@ const STAFF_TUTORIAL_STEPS = [
     stageHtml:`<div class="event-card" style="max-width:320px;">
       <div class="event-body">
         <div class="add-name-row"><input placeholder="品項名稱"><input placeholder="金額" style="max-width:70px;"><button class="tutorial-target">新增選項</button></div>
-        <div class="outside-row paid" style="margin-top:8px;"><label class="paid-check"><input type="checkbox" checked></label><span class="outside-name">05</span><span style="flex:1;font-size:12px;color:var(--ink-soft);">大雞排×1</span><span class="outside-currency">NT$60</span></div>
+        <div class="outside-row paid" style="margin-top:8px;"><label class="paid-check"><input type="checkbox" checked></label><span class="outside-name">47</span><span style="flex:1;font-size:12px;color:var(--ink-soft);">大雞排×1</span><span class="outside-currency">NT$60</span></div>
         <div class="outside-total" style="margin-top:6px;">共 1 人・總金額 NT$60・已繳款 1 人</div>
       </div>
     </div>` },
@@ -965,7 +958,7 @@ async function addDate(dateStr, opts){
   opts=opts||{};
   if(!dateStr) return;
   if(!entries[dateStr]){
-    const data = { date:dateStr, lunch:{screenshot:null}, dinner:{screenshot:null}, lastEditBy:identity(), lastEditAt:new Date().toISOString() };
+    const data = { date:dateStr, lunch:{}, dinner:{}, lastEditBy:identity(), lastEditAt:new Date().toISOString() };
     await setDoc(doc(db,'entries',dateStr), data, {merge:true});
     if(opts.copyFromPrevWeek){ await copyChoiceFromPrevWeek(dateStr); }
   }
@@ -1066,36 +1059,6 @@ async function deleteWeek(wk){
 async function touchEntry(date){
   await setDoc(doc(db,'entries',date), {lastEditBy:identity(), lastEditAt:new Date().toISOString()}, {merge:true});
 }
-function compressImage(file){
-  return new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onload=(e)=>{
-      const img=new Image();
-      img.onload=()=>{
-        const maxW=900; const scale=Math.min(1,maxW/img.width);
-        const canvas=document.createElement('canvas');
-        canvas.width=img.width*scale; canvas.height=img.height*scale;
-        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
-        resolve(canvas.toDataURL('image/jpeg',0.65));
-      };
-      img.onerror=reject; img.src=e.target.result;
-    };
-    reader.onerror=reject; reader.readAsDataURL(file);
-  });
-}
-async function handleFile(date,meal,file){
-  if(!file||!file.type.startsWith('image/')) return;
-  try{
-    const dataUrl=await compressImage(file);
-    await updateDoc(doc(db,'entries',date), {
-      [meal+'.screenshot']: dataUrl,
-      lastEditBy: identity(),
-      lastEditAt: new Date().toISOString()
-    });
-    showToast('截圖已儲存');
-  }catch(e){ showToast('截圖處理失敗：'+e.message); }
-}
-
 function mealCounts(choiceList){
   const list=choiceList||[];
   const roster=rosterLabels();
@@ -1384,26 +1347,23 @@ function renderMealTab(){
   const weeks={};
   dates.forEach(d=>{ const wk=weekKey(d); (weeks[wk]=weeks[wk]||[]).push(d); });
   const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
-  const curWeekKey = weekKey(todayStr());
+  // 「最新週」＝目前所有紀錄裡最晚的那一週（可能是伙委已經先建好的下禮拜），
+  // 不是用「今天」去判斷，這樣伙委先建下週資料時，展開的才會是下週而不是本週。
+  const latestWeekKey = weekKeys[0];
 
-  if(role==='student'){
-    dates.forEach(d=>{
-      if(!defaultedCollapseDates.has(d)){
-        defaultedCollapseDates.add(d);
-        if(weekKey(d)<curWeekKey) collapsedDates.add(d);
-      }
-    });
-  }
+  dates.forEach(d=>{
+    if(!defaultedCollapseDates.has(d)){
+      defaultedCollapseDates.add(d);
+      if(weekKey(d)<latestWeekKey) collapsedDates.add(d);
+    }
+  });
 
   let html=addBarHtml+noteHtml;
   weekKeys.forEach(wk=>{
     const ds=weeks[wk].sort((a,b)=>a.localeCompare(b));
     const weekDeleteBtn = role==='staff' ? `<button class="week-delete-btn" data-action="delete-week" data-week="${wk}">刪除整週</button>` : '';
-    let weekCollapseBtn = '';
-    if(role==='student' && wk===curWeekKey){
-      const allCollapsed = ds.every(d=>collapsedDates.has(d));
-      weekCollapseBtn = `<button class="week-collapse-btn" data-action="toggle-week" data-week="${wk}">${allCollapsed?'展開本週':'一鍵收合本週'}</button>`;
-    }
+    const allCollapsed = ds.every(d=>collapsedDates.has(d));
+    const weekCollapseBtn = `<button class="week-collapse-btn" data-action="toggle-week" data-week="${wk}">${allCollapsed?'展開本週':'一鍵收合本週'}</button>`;
     html += '<div class="week-group" data-week="'+wk+'"><div class="week-title">'+weekCollapseBtn+weekLabel(wk)+weekDeleteBtn+'</div>';
     ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
     html += '</div>';
@@ -1425,7 +1385,7 @@ function renderStaffDateCard(date){
       ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
       <div class="date-note" style="grid-column:1 / -1;">
         <label class="note-label">備註（伙委內部使用）</label>
-        <textarea class="date-note-input" data-action="date-note" data-date="${date}" placeholder="輸入這一天的備註，例如：05 號請假、43 號晚餐加訂...">${escapeHtml(e.note||'')}</textarea>
+        <textarea class="date-note-input" data-action="date-note" data-date="${date}" placeholder="輸入這一天的備註，例如：47 號請假、43 號晚餐加訂...">${escapeHtml(e.note||'')}</textarea>
       </div>
     </div>
     <div class="date-foot">
@@ -1436,7 +1396,6 @@ function renderStaffDateCard(date){
 }
 
 function renderStaffMealCard(date, meal, label, m, choiceList){
-  const shotId=date+'-'+meal;
   const roster=rosterLabels();
   const counts=mealCounts(choiceList);
   const grid=roster.map(lab=>{
@@ -1449,7 +1408,6 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
   const notesList=choiceList.filter(c=>c.note);
   const unsetSeats=roster.filter(lab=>!choiceList.some(c=>c.id===lab));
   const cancelSeats=roster.filter(lab=>{ const c=choiceList.find(x=>x.id===lab); return c && c.status==='cancel'; });
-  const screenshot = m.screenshot || null;
   return `
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
@@ -1461,8 +1419,6 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
     ${others.length?`<div class="other-label">其他（非座號名單，點擊姓名可切換狀態）</div><div class="chips">${others.map(c=>`<span class="name-chip" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${c.id}">${escapeHtml(c.name||c.id)}・${STATUS_LABEL[c.status]||'未選'}<button data-action="remove-choice" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
     <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
     ${notesList.length?`<div class="other-label">備註</div><div class="chips">${notesList.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}：${escapeHtml(c.note)}<button data-action="clear-note" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
-    ${screenshot?`<div class="shot-zone" tabindex="0" data-action="paste-zone" data-date="${date}" data-meal="${meal}"><img src="${screenshot}" data-action="view-shot" data-src="${screenshot}"><div class="shot-actions"><span data-action="replace-shot" data-date="${date}" data-meal="${meal}">更換截圖</span><span class="danger" data-action="remove-shot" data-date="${date}" data-meal="${meal}">移除</span></div></div>`:`<div class="shot-zone" tabindex="0" data-action="paste-zone" data-date="${date}" data-meal="${meal}">📎 點此上傳或貼上截圖</div>`}
-    <input type="file" accept="image/*" data-file-for="${shotId}">
   </div>`;
 }
 
@@ -1489,7 +1445,6 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
   const draft=draftChoice[key];
   const dirty=!!draft;
   const status=dirty?draft.status:savedStatus;
-  const screenshot = m.screenshot || null;
   let statusLine;
   if(dirty) statusLine='已選擇「'+(STATUS_LABEL[status]||'取消選擇')+'」，尚未送出（僅暫存於本機）';
   else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
@@ -1507,7 +1462,6 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
       <span class="submit-status">${escapeHtml(statusLine)}</span>
       <button type="button" class="btn btn-primary btn-submit-choice" data-action="submit-choice" data-date="${date}" data-meal="${meal}" ${dirty?'':'disabled'}>確定送出</button>
     </div>
-    ${screenshot?`<div class="shot-zone" data-action="view-shot" data-src="${screenshot}"><img src="${screenshot}">佐證截圖（點擊放大）</div>`:''}
   </div>`;
 }
 
@@ -1692,21 +1646,30 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     render();
   }
   else if(action==='cycle-status'){
+    // 伙委代填「點座號循環切換」修正：不能拿本機 onSnapshot 快取的 list[date] 來算
+    // 下一個狀態，因為如果同學這時候剛好也在送出自己的選擇，快取可能還沒更新到
+    // 最新版本，兩邊各自基於「舊的當下狀態」計算下一步，最後送出的請求會互相
+    // 覆蓋，導致紀錄流產或人數算錯。改用 runTransaction：在同一個事務裡即時向
+    // Firestore 讀出這份文件「當下最新」的內容，再算下一個狀態、寫回去；如果
+    // 事務進行中文件被別人改掉了，SDK 會自動重讀重算重試，確保不會覆蓋掉別人
+    // 剛送出的資料。 https://firebase.google.com/docs/firestore/manage-data/transactions
     const label=el.dataset.label;
     const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
-    const list = meal==='lunch'?lunchChoice:dinnerChoice;
-    const existing=(list[date]||[]).find(o=>o.id===label);
     const order=['meat','veg','cancel',null];
-    const idx = existing ? order.indexOf(existing.status) : -1;
-    const next = order[(idx+1)%order.length];
     const ref=doc(db,'entries',date,collName,label);
-    if(next===null){ await deleteDoc(ref); }
-    else{
-      await setDoc(ref, {
-        seatNo:label, studentId:label, name: existing?(existing.name||label):label, status:next,
-        note: existing?(existing.note||''):'', date, updatedBy:identity(), updatedAt:new Date().toISOString()
-      }, {merge:true});
-    }
+    await runTransaction(db, async (tx)=>{
+      const snap = await tx.get(ref);
+      const existing = snap.exists() ? snap.data() : null;
+      const idx = existing ? order.indexOf(existing.status) : -1;
+      const next = order[(idx+1)%order.length];
+      if(next===null){ tx.delete(ref); }
+      else{
+        tx.set(ref, {
+          seatNo:label, studentId:label, name: existing?(existing.name||label):label, status:next,
+          note: existing?(existing.note||''):'', date, updatedBy:identity(), updatedAt:new Date().toISOString()
+        }, {merge:true});
+      }
+    });
     await touchEntry(date);
   }
   else if(action==='pick-status'){
@@ -1765,15 +1728,6 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   else if(action==='clear-note'){
     const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     await updateDoc(doc(db,'entries',date,collName,el.dataset.id), {note:'', updatedBy:identity(), updatedAt:new Date().toISOString()});
-  }
-  else if(action==='view-shot'){ document.getElementById('modal-img').src=el.dataset.src; document.getElementById('modal-bg').classList.add('show'); }
-  else if(action==='remove-shot'){
-    await updateDoc(doc(db,'entries',date), {[meal+'.screenshot']:null, lastEditBy:identity(), lastEditAt:new Date().toISOString()});
-    showToast('截圖已移除');
-  }
-  else if(action==='replace-shot'||action==='paste-zone'){
-    if(ev.target.dataset.action==='view-shot') return;
-    const fi=document.querySelector(`input[type=file][data-file-for="${date}-${meal}"]`); if(fi) fi.click();
   }
   else if(action==='delete-event'){ ev.stopPropagation(); await deleteEvent(eventId); }
   else if(action==='add-menu-item'){
@@ -1857,20 +1811,10 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
       paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString()
     });
   }
-  else if(ev.target.matches('input[type=file]')){
-    const key=ev.target.dataset.fileFor; const parts=key.split('-'); const meal=parts.pop(); const date=parts.join('-');
-    const file=ev.target.files[0]; await handleFile(date,meal,file); ev.target.value='';
-  }
   }catch(err){
     console.error(err);
     showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
   }
-});
-
-document.getElementById('content').addEventListener('paste', async (ev)=>{
-  const zone=ev.target.closest('[data-action="paste-zone"]'); if(!zone) return;
-  const items=(ev.clipboardData||window.clipboardData).items;
-  for(const item of items){ if(item.type.startsWith('image/')){ await handleFile(zone.dataset.date, zone.dataset.meal, item.getAsFile()); break; } }
 });
 
 document.getElementById('content').addEventListener('click', async (ev)=>{
@@ -1879,7 +1823,6 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   else if(ev.target.id==='create-event-btn'){ const inp=document.getElementById('event-title-input'); const t=inp.value.trim(); if(!t){showToast('請輸入活動名稱');return;} createEvent(t); inp.value=''; }
 });
 
-document.getElementById('modal-bg').addEventListener('click',()=>document.getElementById('modal-bg').classList.remove('show'));
 
 document.getElementById('gmap-modal-close').addEventListener('click', ()=>{
   document.getElementById('gmap-modal-bg').classList.remove('show');

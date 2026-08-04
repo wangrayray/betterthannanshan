@@ -17,7 +17,7 @@ settings/config              全班共用設定（座號數、是否含「師」
 students/{seatNo}            全班座號名冊（伙委在設定頁存檔時自動同步）
 staff/{email}                伙委名單，文件 id = 該伙委的登入 email
 eventCoordinators/{seatNo}   外食訂購人名單，效期 14 天，過期自動失效
-entries/{date}                每日訂餐紀錄（截圖佐證）
+entries/{date}                每日訂餐紀錄
   └ lunch_choice/{seatNo}      該日午餐每人的選擇，一人一份文件
                                {status: meat|veg|cancel, note, updatedBy, updatedAt}
   └ dinner_choice/{seatNo}     該日晚餐每人的選擇，格式同上
@@ -156,9 +156,6 @@ Firebase Console → Authentication → Settings → Authorized domains →
 
 ## 已知限制 / 後續可以強化的地方
 
-- **截圖直接存在 Firestore 文件裡**（base64，已壓縮到約 900px 寬、jpeg
-  0.65 品質），單一文件上限 1MB，正常使用不會超過，但如果想更穩妥，可以
-  改用 Firebase Storage 存圖片、Firestore 只存網址，我可以之後幫你加。
 - **密碼無法在前端重設**：同學或伙委忘記密碼時，需要管理員到 Firebase
   Console → Authentication 手動重設密碼或刪除帳號讓對方重新註冊。
 - 目前「讀取」對所有已登入使用者是開放的（伙委和同學都能看到彼此的退餐/
