@@ -1348,4 +1348,852 @@ function refreshNearbyRestaurantMarkers(){
   });
 }
 function selectGmapPlace(name, address, lat, lng){
-  gmapSelectedPlace = {name, address: address||'', lat, lng}
+  gmapSelectedPlace = {name, address: address||'', lat, lng};
+  gmapMarker.setPosition({lat,lng});
+  gmapMarker.setMap(gmap);
+  gmap.panTo({lat,lng});
+  document.getElementById('gmap-selected-info').textContent = '已選取：'+name+(address?'（'+address+'）':'');
+  document.getElementById('gmap-confirm-btn').disabled = false;
+}
+async function openMapModal(eventId){
+  gmapModalEventId = eventId;
+  gmapSelectedPlace = null;
+  document.getElementById('gmap-selected-info').textContent = '點地圖上的店家、或用上面搜尋框找餐廳，選好後按下面「推薦這個地點」';
+  document.getElementById('gmap-confirm-btn').disabled = true;
+  document.getElementById('gmap-search-input').value = '';
+  document.getElementById('gmap-modal-bg').classList.add('show');
+  try{
+    await ensureGoogleMapsLoaded();
+    initGmapIfNeeded();
+    google.maps.event.trigger(gmap, 'resize');
+    try{ await getUserLocation(); gmap.setCenter({lat:userLocation.lat, lng:userLocation.lon}); }
+    catch(err){ /* 定位失敗就用預設中心，不阻擋地圖使用 */ }
+    refreshNearbyRestaurantMarkers();
+  }catch(err){
+    console.error(err);
+    showToast('地圖載入失敗：'+(err.message||'請確認網路連線'));
+  }
+}
+// 每個人（伙委用 email、同學用座號）在同一個活動裡「最多可以推薦兩家餐廳」，
+// 用 voters 這個 map 記錄「誰投過」，票數用 voters 的筆數計算。
+// 自己推薦的隨時可以按「移除我的推薦」取消（只拿掉自己那一票，如果還有別人
+// 也投這家，這家餐廳本身不會被刪掉）；伙委／外食訂購人則可以直接移除任何人
+// 推薦的整筆資料（不管有幾票）。
+const MAX_RECOMMENDATIONS_PER_PERSON = 2;
+function myVoterKey(){
+  return role==='staff' ? ('staff_'+simpleHash(myEmail||'')) : ('student_'+(studentId||''));
+}
+function myCurrentRecommendations(eventId){
+  const voterKey=myVoterKey();
+  return (eventRecommendations[eventId]||[]).filter(r=>r.voters && r.voters[voterKey]);
+}
+function isMyVote(r){
+  return !!(r.voters && r.voters[myVoterKey()]);
+}
+async function removeMyVoteFrom(eventId, rec, voterKey){
+  const remaining = Object.keys(rec.voters||{}).filter(k=>k!==voterKey);
+  if(remaining.length===0){
+    await deleteDoc(doc(db,'events',eventId,'recommendations',rec.id));
+  } else {
+    await updateDoc(doc(db,'events',eventId,'recommendations',rec.id), {['voters.'+voterKey]: deleteField()});
+  }
+}
+async function recommendRestaurant(eventId, name, address, lat, lon){
+  name=(name||'').trim(); address=(address||'').trim();
+  if(!name){ showToast('請輸入或選擇餐廳名稱'); return; }
+  const recId = 'r'+simpleHash(name.toLowerCase()+'|'+address.toLowerCase());
+  const voterKey = myVoterKey();
+  const mine = myCurrentRecommendations(eventId);
+  if(mine.some(r=>r.id===recId)){
+    showToast('你已經推薦過「'+name+'」了');
+    return;
+  }
+  if(mine.length >= MAX_RECOMMENDATIONS_PER_PERSON){
+    showToast('每人最多只能推薦 '+MAX_RECOMMENDATIONS_PER_PERSON+' 家餐廳，請先移除一家再推薦新的');
+    return;
+  }
+  await setDoc(doc(db,'events',eventId,'recommendations',recId), {
+    name, address, lat: (lat===undefined||lat===null||isNaN(lat))?null:lat, lon:(lon===undefined||lon===null||isNaN(lon))?null:lon,
+    eventId,
+    voters: { [voterKey]: { by: identity(), at: new Date().toISOString() } },
+    lastRecommendedBy: identity(), lastRecommendedAt: new Date().toISOString()
+  }, {merge:true});
+  showToast('已推薦「'+name+'」');
+}
+async function removeRecommendation(eventId, recId){
+  await deleteDoc(doc(db,'events',eventId,'recommendations',recId));
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function render(){
+  if(!role){ document.getElementById('content').innerHTML='<div class="empty-state">請先登入</div>'; return; }
+  if(activeTab==='meal') renderMealTab(); else renderEventTab();
+  updateBellBadge();
+}
+
+function pendingRosterNote(){
+  if(role==='student' && !studentsRoster[studentId]){
+    return `<div class="pending-note">你的座號「${escapeHtml(studentId)}」尚未列入名冊，退餐/訂購資料可能無法儲存，請聯絡伙委確認座號設定。</div>`;
+  }
+  return '';
+}
+function coordinatorNote(){
+  if(role==='student' && isCoordinatorActive()){
+    const d=myCoordinatorDoc();
+    const exp = d.expiresAt.toDate ? d.expiresAt.toDate() : new Date(d.expiresAt);
+    return `<div class="pending-note" style="color:var(--outside);background:var(--outside-bg);">你目前擁有「外食訂購人」權限，可以建立與管理外食訂購活動，效期至 ${exp.getMonth()+1}/${exp.getDate()}。</div>`;
+  }
+  return '';
+}
+
+function renderMealTab(){
+  const content=document.getElementById('content');
+  const dates=Object.keys(entries).sort((a,b)=>b.localeCompare(a));
+
+  let addBarHtml='';
+  if(role==='staff'){
+    addBarHtml = `
+    <div class="add-bar">
+      <label for="date-input">選擇日期</label>
+      <input type="date" id="date-input" value="${todayStr()}">
+      <button class="btn btn-ghost" id="add-date-btn">＋新增單日</button>
+      <button class="btn btn-primary" id="add-week-btn">＋新增整週（一～五，自動延續上週）</button>
+    </div>`;
+  }
+  const noteHtml = pendingRosterNote();
+
+  if(dates.length===0){
+    content.innerHTML = addBarHtml + noteHtml + `<div class="empty-state">${role==='staff' ? '目前沒有紀錄，選擇日期後新增單日或整週' : '伙委尚未建立日期，請稍後再來確認'}</div>`;
+    return;
+  }
+
+  const weeks={};
+  dates.forEach(d=>{ const wk=weekKey(d); (weeks[wk]=weeks[wk]||[]).push(d); });
+  const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
+  // 「最新週」＝目前所有紀錄裡最晚的那一週（可能是伙委已經先建好的下禮拜），
+  // 不是用「今天」去判斷，這樣伙委先建下週資料時，展開的才會是下週而不是本週。
+  const latestWeekKey = weekKeys[0];
+
+  dates.forEach(d=>{
+    if(!defaultedCollapseDates.has(d)){
+      defaultedCollapseDates.add(d);
+      if(weekKey(d)<latestWeekKey) collapsedDates.add(d);
+    }
+  });
+
+  let html=addBarHtml+noteHtml;
+  weekKeys.forEach(wk=>{
+    const ds=weeks[wk].sort((a,b)=>a.localeCompare(b));
+    const weekDeleteBtn = role==='staff' ? `<button class="week-delete-btn" data-action="delete-week" data-week="${wk}">刪除整週</button>` : '';
+    const allCollapsed = ds.every(d=>collapsedDates.has(d));
+    const weekCollapseBtn = `<button class="week-collapse-btn" data-action="toggle-week" data-week="${wk}">${allCollapsed?'展開本週':'一鍵收合本週'}</button>`;
+    html += '<div class="week-group" data-week="'+wk+'"><div class="week-title">'+weekCollapseBtn+weekLabel(wk)+weekDeleteBtn+'</div>';
+    ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
+    html += '</div>';
+  });
+  content.innerHTML = html;
+}
+
+function renderStaffDateCard(date){
+  const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
+  const lC=mergedStaffChoiceArr(date,'lunch'), dC=mergedStaffChoiceArr(date,'dinner');
+  const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
+  const pending = pendingCountForDate(date);
+  const pendingBar = pending ? `
+      <div class="pending-bar" data-date="${date}" style="grid-column:1 / -1;">
+        <b>${pending} 筆異動尚未送出</b>
+        <button type="button" class="btn btn-primary" data-action="submit-day-changes" data-date="${date}">送出這天的異動</button>
+        <button type="button" class="btn btn-ghost" data-action="discard-day-changes" data-date="${date}">捨棄</button>
+      </div>` : '';
+  return `
+  <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
+    <div class="date-head" data-action="toggle" data-date="${date}">
+      <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
+      <div class="date-head-right">${headRight}</div>
+    </div>
+    <div class="date-body">
+      ${pendingBar}
+      ${renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lC)}
+      ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
+      <div class="date-note" style="grid-column:1 / -1;">
+        <label class="note-label">備註（伙委內部使用）</label>
+        <textarea class="date-note-input" data-action="date-note" data-date="${date}" placeholder="輸入這一天的備註，例如：47 號請假、43 號晚餐加訂...">${escapeHtml(e.note||'')}</textarea>
+      </div>
+    </div>
+    <div class="date-foot">
+      <div><button class="date-delete" data-action="delete-date" data-date="${date}">刪除此日紀錄</button></div>
+      <span class="edit-tag">${e.lastEditBy?'最後編輯：'+escapeHtml(e.lastEditBy)+' · '+fmtTime(e.lastEditAt):''}</span>
+    </div>
+  </div>`;
+}
+
+function renderStaffMealCard(date, meal, label, m, choiceList){
+  const roster=rosterLabels();
+  const counts=mealCounts(choiceList);
+  const grid=roster.map(lab=>{
+    const c=choiceList.find(x=>x.id===lab);
+    const status=c?c.status:'unset';
+    const titleParts=[STATUS_LABEL[status]||'尚未選擇']; if(c&&c.note) titleParts.push('備註：'+c.note);
+    if(c&&c.pending) titleParts.push('尚未送出');
+    return `<span class="number-cell ${status}${c&&c.pending?' pending':''}" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${lab}" title="${escapeHtml(titleParts.join('・'))}">${lab}</span>`;
+  }).join('');
+  const others=choiceList.filter(c=>!roster.includes(c.id));
+  const notesList=choiceList.filter(c=>c.note);
+  const unsetSeats=roster.filter(lab=>!choiceList.some(c=>c.id===lab));
+  const cancelSeats=roster.filter(lab=>{ const c=choiceList.find(x=>x.id===lab); return c && c.status==='cancel'; });
+  return `
+  <div class="meal-card ${meal}">
+    <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
+    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人・尚未選擇 <b>${counts.unset}</b> 人</div>
+    <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 未選）</div>
+    <div class="number-grid">${grid}</div>
+    ${unsetSeats.length?`<div class="pending-note" style="margin:0 0 8px;">尚未選擇（${unsetSeats.length}）：${unsetSeats.map(escapeHtml).join('、')}</div>`:''}
+    ${cancelSeats.length?`<div class="other-label">退餐：${cancelSeats.map(escapeHtml).join('、')}</div>`:''}
+    ${others.length?`<div class="other-label">其他（非座號名單，點擊姓名可切換狀態）</div><div class="chips">${others.map(c=>`<span class="name-chip" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${c.id}">${escapeHtml(c.name||c.id)}・${STATUS_LABEL[c.status]||'未選'}<button data-action="remove-choice" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
+    <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
+    ${notesList.length?`<div class="other-label">備註</div><div class="chips">${notesList.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}：${escapeHtml(c.note)}<button data-action="clear-note" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
+  </div>`;
+}
+
+function renderStudentDateCard(date){
+  const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
+  const lC=choiceArr(date,'lunch'), dC=choiceArr(date,'dinner');
+  const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
+  return `
+  <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
+    <div class="date-head" data-action="toggle" data-date="${date}">
+      <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
+      <div class="date-head-right">${headRight}</div>
+    </div>
+    <div class="date-body">
+      ${renderStudentMealCard(date,'lunch','午餐',e.lunch||{},lC)}
+      ${renderStudentMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
+    </div>
+  </div>`;
+}
+
+function renderStudentMealCard(date, meal, label, m, choiceList){
+  const mine=choiceList.find(c=>c.id===studentId);
+  const savedStatus=mine?mine.status:'';
+  const key=date+'|'+meal;
+  const draft=draftChoice[key];
+  const dirty=!!draft;
+  const status=dirty?draft.status:savedStatus;
+  let statusLine;
+  if(dirty) statusLine='已選擇「'+(STATUS_LABEL[status]||'取消選擇')+'」，尚未送出（僅暫存於本機）';
+  else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
+  else statusLine='尚未選擇';
+
+  return `
+  <div class="meal-card ${meal}">
+    <div class="meal-title"><span class="dot"></span>${label}</div>
+    <div class="choice-buttons">
+      <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="meat">葷食</button>
+      <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="veg">素食</button>
+      <button type="button" class="choice-btn cancel ${status==='cancel'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="cancel">退餐</button>
+    </div>
+    <div class="submit-row ${dirty?'dirty':''}">
+      <span class="submit-status">${escapeHtml(statusLine)}</span>
+      <button type="button" class="btn btn-primary btn-submit-choice" data-action="submit-choice" data-date="${date}" data-meal="${meal}" ${dirty?'':'disabled'}>確定送出</button>
+    </div>
+  </div>`;
+}
+
+function renderEventTab(){
+  const content=document.getElementById('content');
+  const list=Object.values(events).sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+  const manage = canManageEvents();
+
+  let addHtml='';
+  if(manage){
+    addHtml = `<div class="add-bar"><label for="event-title-input">活動名稱</label><input type="text" id="event-title-input" placeholder="例如：8/10 雞排店合購"><button class="btn btn-outside" id="create-event-btn">＋新增外食訂購活動</button></div>`;
+  }
+  const noteHtml = pendingRosterNote() + coordinatorNote();
+
+  const totalAll = list.reduce((s,ev)=>s+eventTotal(ev),0);
+  const overviewHtml = `<div class="overview">
+    <div class="stat"><span class="num">NT$ ${totalAll}</span><span class="lab">全部活動總金額</span></div>
+    <div class="stat"><span class="num">${list.length}</span><span class="lab">已建立活動數</span></div>
+  </div>`;
+
+  if(list.length===0){
+    content.innerHTML = addHtml + noteHtml + overviewHtml + `<div class="empty-state">${manage?'還沒有外食訂購活動，建立一個開始收單吧':'目前沒有進行中的外食訂購活動'}</div>`;
+    return;
+  }
+
+  let html = addHtml + noteHtml + overviewHtml;
+  list.forEach(ev=>{ html += manage ? renderStaffEventCard(ev) : renderStudentEventCard(ev); });
+  content.innerHTML = html;
+}
+
+function renderRecommendSection(eventId, canDelete){
+  const voteCountOf = r => r.voters ? Object.keys(r.voters).length : (r.count||1);
+  const recs = (eventRecommendations[eventId]||[]).slice().sort((a,b)=>voteCountOf(b)-voteCountOf(a));
+
+  const listHtml = recs.length ? `
+    <div class="rec-list">
+      ${recs.map(r=>`
+        <div class="rec-row">
+          <div class="rec-info">
+            <span class="rec-name">${escapeHtml(r.name)}<span class="rec-count">×${voteCountOf(r)}</span></span>
+            ${r.address?`<div class="rec-address">${escapeHtml(r.address)}</div>`:''}
+          </div>
+          <div class="rec-actions">
+            ${(r.lat&&r.lon)?`<a class="rec-map-link" href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lon}" target="_blank" rel="noopener">🗺️ 地圖</a>`:''}
+            <button type="button" class="rec-vote-btn" data-action="vote-recommend" data-event="${eventId}" data-id="${r.id}">👍 +1</button>
+            ${isMyVote(r)?`<button type="button" class="outside-remove" data-action="remove-my-recommend" data-event="${eventId}" data-id="${r.id}" title="只移除我自己的推薦">移除</button>`:''}
+            ${canDelete?`<button type="button" class="outside-remove" data-action="remove-recommend" data-event="${eventId}" data-id="${r.id}" title="移除這筆推薦（不論幾票）">×</button>`:''}
+          </div>
+        </div>`).join('')}
+    </div>` : `<div class="other-label">目前還沒有人推薦餐廳</div>`;
+
+  return `
+  <div class="rec-section">
+    <div class="section-label">🍽️ 餐廳推薦（用 Google 地圖選餐廳，推薦後同名同地址會自動累計次數，每人最多推薦兩家；自己推薦的可以按「移除我的」取消，伙委／外食訂購人可以移除任何人的推薦）</div>
+    <div class="rec-search-row">
+      <button type="button" class="btn btn-outside" data-action="open-map-modal" data-event="${eventId}">📍 開啟地圖選餐廳</button>
+    </div>
+    <div class="rec-manual-row">
+      <input type="text" class="rec-manual-input" placeholder="地圖上找不到？直接輸入餐廳名稱推薦" data-action="rec-manual-input" data-event="${eventId}">
+      <button type="button" class="btn btn-outside" data-action="recommend-manual" data-event="${eventId}">直接推薦</button>
+    </div>
+    ${listHtml}
+  </div>`;
+}
+
+function renderStaffEventCard(ev){
+  const menu = eventMenu[ev.id]||[];
+  const orders = eventOrders[ev.id]||[];
+  const roster=rosterLabels();
+  const total=eventTotal(ev);
+  const paidOrders = orders.filter(o=>o.paid);
+  const paidCount = paidOrders.length;
+  const unpaidCount = orders.length - paidCount;
+  const paidTotal = paidOrders.reduce((s,o)=>s+orderTotal(o, menu),0);
+
+  const menuChips = menu.map(mi=>`<span class="name-chip">${escapeHtml(mi.name)} · NT$${mi.price}<button data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}">×</button></span>`).join('');
+
+  const rosterOrders = orders.filter(o=>roster.includes(o.id));
+  const customOrders = orders.filter(o=>!roster.includes(o.id));
+
+  const rosterRows = rosterOrders.map(o=>{
+    const sub=orderTotal(o, menu);
+    const paid=!!o.paid;
+    const itemList = menu.filter(mi=>(o.items&&o.items[mi.id])>0).map(mi=>escapeHtml(mi.name)+'×'+o.items[mi.id]).join('、') || '（尚未選擇品項）';
+    return `<div class="outside-row ${paid?'paid':''}"><label class="paid-check" title="已繳款"><input type="checkbox" data-action="toggle-paid" data-event="${ev.id}" data-id="${o.id}" ${paid?'checked':''}></label><span class="outside-name">${escapeHtml(o.name||o.id)}</span><span style="flex:1;font-size:12.5px;color:var(--ink-soft);">${itemList}</span><span class="outside-currency">NT$${sub}</span></div>`;
+  }).join('');
+
+  const customRows = customOrders.map(o=>{
+    const sub = orderTotal(o, menu);
+    const paid=!!o.paid;
+    const itemInputs = menu.map(mi=>`
+      <span class="qty-item">
+        <span class="qty-item-name">${escapeHtml(mi.name)}</span>
+        <input type="number" min="0" class="qty-input" value="${(o.items&&o.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${o.id}" data-item="${mi.id}">
+      </span>`).join('');
+    return `
+    <div class="outside-row ${paid?'paid':''}" style="align-items:flex-start;flex-wrap:wrap;">
+      <label class="paid-check" title="已繳款" style="padding-top:4px;"><input type="checkbox" data-action="toggle-paid" data-event="${ev.id}" data-id="${o.id}" ${paid?'checked':''}></label>
+      <span class="outside-name" style="padding-top:4px;">${escapeHtml(o.name||o.id)}</span>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;">${itemInputs || '<span class="other-label">尚未新增菜單選項</span>'}</div>
+      <span class="outside-currency" style="padding-top:4px;">NT$${sub}</span>
+      <button class="outside-remove" data-action="remove-participant" data-event="${ev.id}" data-id="${o.id}">×</button>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="event-card">
+    <div class="event-head">
+      <h3>${escapeHtml(ev.title)}</h3>
+      <div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span><span>由 ${escapeHtml(ev.createdBy||'')}</span>${ev.lastEditBy?`<span>最後編輯：${escapeHtml(ev.lastEditBy)} · ${fmtTime(ev.lastEditAt)}</span>`:''}</div>
+    </div>
+    <div class="event-body">
+      <div class="section-label">菜單選項（設定好後，同學會在自己的介面自行選取）</div>
+      <div class="chips">${menuChips || '<span class="other-label">尚未新增選項，請先在下方新增</span>'}</div>
+      <div class="add-name-row">
+        <input type="text" placeholder="品項名稱" data-role="menu-name" data-event="${ev.id}" style="flex:2;">
+        <input type="number" min="0" placeholder="金額" data-role="menu-price" data-event="${ev.id}" style="flex:1;">
+        <button data-action="add-menu-item" data-event="${ev.id}">新增選項</button>
+      </div>
+
+      <div class="section-label" style="margin-top:12px;">座號同學訂購狀況（由同學自行選取，此處僅顯示，無法在此代填）</div>
+      ${rosterOrders.length ? `<div class="outside-list">${rosterRows}</div>` : `<div class="other-label">目前還沒有同學下單</div>`}
+
+      <div class="section-label" style="margin-top:12px;">其他訂購人（非座號名單，可在此手動設定數量）</div>
+      ${customOrders.length ? `<div class="outside-list">${customRows}</div>` : ''}
+      <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="event-name-input" data-event="${ev.id}"><button data-action="add-event-name" data-event="${ev.id}">新增</button></div>
+      <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}・<span class="paid-tag">已繳款 ${paidCount} 人（NT$ ${paidTotal}）</span>${unpaidCount?`・尚未繳款 ${unpaidCount} 人`:''}</div>
+
+      ${renderRecommendSection(ev.id, true)}
+    </div>
+    <div class="event-delete"><button class="date-delete" data-action="delete-event" data-event="${ev.id}">刪除此活動</button></div>
+  </div>`;
+}
+
+function renderStudentEventCard(ev){
+  const menu = eventMenu[ev.id]||[];
+  const orders = eventOrders[ev.id]||[];
+  const mine = orders.find(o=>o.id===studentId) || {items:{}};
+  const mySub = orderTotal(mine, menu);
+  const total = eventTotal(ev);
+
+  const itemRows = menu.map(mi=>`
+    <div class="outside-row">
+      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}</span>
+      <span class="outside-currency">NT$${mi.price}</span>
+      <input type="number" min="0" class="outside-amount" value="${(mine.items&&mine.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${studentId}" data-item="${mi.id}">
+    </div>`).join('');
+
+  return `
+  <div class="event-card">
+    <div class="event-head"><h3>${escapeHtml(ev.title)}</h3><div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span></div></div>
+    <div class="event-body">
+      <div class="section-label">目前已有 <b>${orders.length}</b> 人參加・總金額 <b>NT$ ${total}</b></div>
+      ${menu.length ? `
+        <div class="section-label" style="margin-top:8px;">選擇品項與數量（可重複訂購）</div>
+        <div class="outside-list">${itemRows}</div>
+        <div class="outside-total">我的金額：NT$ ${mySub}${mine.paid?'　<span class="paid-tag">✓ 伙委已確認收款</span>':''}</div>
+      ` : `<div class="other-label">伙委尚未設定菜單選項</div>`}
+
+      ${renderRecommendSection(ev.id, false)}
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// DOM EVENTS
+// ============================================================
+document.getElementById('content').addEventListener('click', async (ev)=>{
+  const el=ev.target.closest('[data-action]'); if(!el) return;
+  const action=el.dataset.action, date=el.dataset.date, meal=el.dataset.meal, eventId=el.dataset.event;
+  try{
+
+  if(action==='toggle'){
+    if(ev.target.closest('.date-delete')||ev.target.closest('.copy-last-btn')) return;
+    if(collapsedDates.has(date)){ collapsedDates.delete(date); } else collapsedDates.add(date);
+    render();
+  }
+  else if(action==='toggle-week'){
+    const wk=el.dataset.week;
+    const ds=Object.keys(entries).filter(d=>weekKey(d)===wk);
+    const allCollapsed = ds.every(d=>collapsedDates.has(d));
+    ds.forEach(d=>{ if(allCollapsed) collapsedDates.delete(d); else collapsedDates.add(d); });
+    render();
+  }
+  else if(action==='cycle-status'){
+    // 伙委代填改成「本機批次暫存」：點座號只更新本機 staffDraft，不立刻寫入
+    // Firestore，畫面用 mergedStaffChoiceArr() 疊加顯示暫存效果。要等按下這
+    // 一天的「送出這天的異動」才會真的一次寫入，同一份文件的多筆異動合併成
+    // 一次 updateDoc，避免每點一下就打一次 Firestore。
+    const label=el.dataset.label;
+    const order=['meat','veg','cancel',null];
+    const key=date+'|'+meal+'|'+label;
+    const live=choiceMap(date, meal)[label];
+    const liveStatus=live?live.status:null;
+    const d=staffDraft[key];
+    const current = d ? d.next : liveStatus;
+    const baseline = d ? d.baseline : liveStatus;
+    const idx=order.indexOf(current);
+    const next=order[(idx+1)%order.length];
+    if(next===baseline){ delete staffDraft[key]; }
+    else{
+      staffDraft[key] = { date, meal, label, baseline, next,
+        name: live?(live.name||label):label, note: live?(live.note||''):'' };
+    }
+    render();
+  }
+  else if(action==='submit-day-changes'){
+    // 把這一天所有暫存的異動一次送出。送出前逐筆比對 baseline（開始編輯當下
+    // 看到的狀態）跟 Firestore 目前最新值：如果不一致，代表這段時間被別人改
+    // 過了，就跳過那一筆（不覆蓋），其餘沒有衝突的照樣一次 updateDoc 送出。
+    ev.stopPropagation();
+    const pendingKeys=Object.keys(staffDraft).filter(k=>staffDraft[k].date===date);
+    if(!pendingKeys.length) return;
+    const fieldUpdates={}; const conflicts=[]; const applied=[];
+    pendingKeys.forEach(k=>{
+      const p=staffDraft[k];
+      const live=choiceMap(p.date,p.meal)[p.label];
+      const liveStatus=live?live.status:null;
+      if(liveStatus!==p.baseline){ conflicts.push(p); return; }
+      const path=p.meal+'.choices.'+p.label;
+      fieldUpdates[path] = p.next===null ? deleteField() : {
+        seatNo:p.label, studentId:p.label, name:p.name||p.label, status:p.next, note:p.note||'',
+        updatedBy:identity(), updatedAt:serverTimestamp()
+      };
+      applied.push(k);
+    });
+    if(applied.length){
+      fieldUpdates.lastEditBy=identity();
+      fieldUpdates.lastEditAt=new Date().toISOString();
+      await updateDoc(doc(db,'entries',date), fieldUpdates);
+    }
+    applied.forEach(k=>delete staffDraft[k]);
+    if(conflicts.length){ showToast('已送出，但有 '+conflicts.length+' 筆因為被別人改過而跳過，請重新確認'); }
+    else if(applied.length){ showToast('已送出 '+applied.length+' 筆異動'); }
+    render();
+  }
+  else if(action==='discard-day-changes'){
+    ev.stopPropagation();
+    Object.keys(staffDraft).filter(k=>staffDraft[k].date===date).forEach(k=>delete staffDraft[k]);
+    render();
+  }
+  else if(action==='pick-status'){
+    // 同學點選按鈕只更新「本機暫存」，畫面會立刻反白，但還沒送到伺服器，
+    // 要等按下「確定送出」才會真的寫入 Firestore。
+    const status=el.dataset.status;
+    const key=date+'|'+meal;
+    const existing=choiceMap(date, meal)[studentId];
+    const savedStatus = existing?existing.status:'';
+    const current = draftChoice[key] ? draftChoice[key].status : savedStatus;
+    const newStatus = current===status ? '' : status; // 再點一次同一個 = 取消選擇
+    if(newStatus===savedStatus){ delete draftChoice[key]; } else { draftChoice[key] = {status:newStatus}; }
+    render();
+  }
+  else if(action==='submit-choice'){
+    const key=date+'|'+meal;
+    const existing=choiceMap(date, meal)[studentId];
+    const savedStatus = existing?existing.status:'';
+    const draft=draftChoice[key];
+    const status = draft ? draft.status : savedStatus;
+    const path=meal+'.choices.'+studentId;
+    if(!status){
+      await updateDoc(doc(db,'entries',date), { [path]: deleteField() });
+      showToast('已送出：取消訂餐選擇');
+    } else {
+      await updateDoc(doc(db,'entries',date), { [path]: {
+        seatNo:studentId, studentId, name:studentId, status,
+        updatedBy:identity(), updatedAt:serverTimestamp()
+      }});
+      showToast('已送出：'+(STATUS_LABEL[status]||''));
+    }
+    delete draftChoice[key];
+    render();
+  }
+  else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
+  else if(action==='delete-week'){ ev.stopPropagation(); await deleteWeek(el.dataset.week); }
+  else if(action==='copy-prev-day-meal'){ ev.stopPropagation(); await applyPrevDayTo(date, meal); }
+  else if(action==='copy-last-week-meal'){ ev.stopPropagation(); await applyLastWeekMealTo(date, meal); }
+  else if(action==='add-name'){
+    const input=document.querySelector(`input[data-action="name-input"][data-date="${date}"][data-meal="${meal}"]`);
+    const name=input.value.trim(); if(!name) return;
+    const id='other__'+uid();
+    const path=meal+'.choices.'+id;
+    await updateDoc(doc(db,'entries',date), {
+      [path]: {seatNo:id, studentId:id, name, status:'unset', note:'', updatedBy:identity(), updatedAt:serverTimestamp()},
+      lastEditBy:identity(), lastEditAt:new Date().toISOString()
+    });
+    input.value='';
+  }
+  else if(action==='remove-choice'){
+    const path=meal+'.choices.'+el.dataset.id;
+    await updateDoc(doc(db,'entries',date), { [path]: deleteField(), lastEditBy:identity(), lastEditAt:new Date().toISOString() });
+  }
+  else if(action==='clear-note'){
+    const path=meal+'.choices.'+el.dataset.id+'.note';
+    await updateDoc(doc(db,'entries',date), { [path]: '' });
+  }
+  else if(action==='delete-event'){ ev.stopPropagation(); await deleteEvent(eventId); }
+  else if(action==='add-menu-item'){
+    const nameInput=document.querySelector(`input[data-role="menu-name"][data-event="${eventId}"]`);
+    const priceInput=document.querySelector(`input[data-role="menu-price"][data-event="${eventId}"]`);
+    const name=nameInput.value.trim(); const price=priceInput.value;
+    if(!name){ showToast('請輸入品項名稱'); return; }
+    await addMenuItem(eventId, name, price);
+  }
+  else if(action==='remove-menu-item'){ await removeMenuItem(eventId, el.dataset.item); }
+  else if(action==='remove-participant'){ await removeParticipant(eventId, el.dataset.id); }
+  else if(action==='add-event-name'){
+    const input=document.querySelector(`input[data-action="event-name-input"][data-event="${eventId}"]`);
+    const name=input.value.trim(); if(!name) return;
+    await addEventCustomName(eventId, name);
+    input.value='';
+  }
+  else if(action==='open-map-modal'){
+    await openMapModal(eventId);
+  }
+  else if(action==='recommend-manual'){
+    const input=document.querySelector(`input[data-action="rec-manual-input"][data-event="${eventId}"]`);
+    const name=input.value.trim();
+    if(!name){ showToast('請輸入餐廳名稱'); return; }
+    await recommendRestaurant(eventId, name, '', null, null);
+    input.value='';
+    render();
+  }
+  else if(action==='vote-recommend'){
+    const r=(eventRecommendations[eventId]||[]).find(x=>x.id===el.dataset.id);
+    if(!r) return;
+    await recommendRestaurant(eventId, r.name, r.address, r.lat, r.lon);
+  }
+  else if(action==='remove-my-recommend'){
+    const r=(eventRecommendations[eventId]||[]).find(x=>x.id===el.dataset.id);
+    if(!r) return;
+    await removeMyVoteFrom(eventId, r, myVoterKey());
+  }
+  else if(action==='remove-recommend'){
+    await removeRecommendation(eventId, el.dataset.id);
+  }
+
+  }catch(err){
+    console.error(err);
+    showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
+  }
+});
+
+document.getElementById('content').addEventListener('keydown', async (ev)=>{
+  try{
+  if(ev.target.dataset.action==='name-input' && ev.key==='Enter'){
+    ev.preventDefault();
+    const date=ev.target.dataset.date, meal=ev.target.dataset.meal, name=ev.target.value.trim();
+    if(!name) return;
+    const id='other__'+uid();
+    const path=meal+'.choices.'+id;
+    await updateDoc(doc(db,'entries',date), {
+      [path]: {seatNo:id, studentId:id, name, status:'unset', note:'', updatedBy:identity(), updatedAt:serverTimestamp()},
+      lastEditBy:identity(), lastEditAt:new Date().toISOString()
+    });
+    ev.target.value='';
+  }
+  else if(ev.target.dataset.action==='event-name-input' && ev.key==='Enter'){
+    ev.preventDefault();
+    const eventId=ev.target.dataset.event, name=ev.target.value.trim();
+    if(!name) return;
+    await addEventCustomName(eventId, name);
+    ev.target.value='';
+  }
+  }catch(err){
+    console.error(err);
+    showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
+  }
+});
+
+document.getElementById('content').addEventListener('change', async (ev)=>{
+  try{
+  if(ev.target.dataset.action==='date-note'){
+    const date=ev.target.dataset.date;
+    await setDoc(doc(db,'entries',date), {note: ev.target.value, lastEditBy:identity(), lastEditAt:new Date().toISOString()}, {merge:true});
+    showToast('備註已儲存');
+  }
+  else if(ev.target.dataset.action==='item-qty'){
+    await setItemQty(ev.target.dataset.event, ev.target.dataset.label, ev.target.dataset.item, ev.target.value);
+  }
+  else if(ev.target.dataset.action==='toggle-paid'){
+    await updateDoc(doc(db,'events',ev.target.dataset.event,'orders',ev.target.dataset.id), {
+      paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString(), updatedAt:serverTimestamp()
+    });
+  }
+  }catch(err){
+    console.error(err);
+    showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
+  }
+});
+
+document.getElementById('content').addEventListener('click', async (ev)=>{
+  if(ev.target.id==='add-date-btn'){ const v=document.getElementById('date-input').value; if(!v){showToast('請先選擇日期');return;} addDate(v,{copyFromPrevWeek:true}); }
+  else if(ev.target.id==='add-week-btn'){ const v=document.getElementById('date-input').value; if(!v){showToast('請先選擇日期');return;} addWeek(v); }
+  else if(ev.target.id==='create-event-btn'){ const inp=document.getElementById('event-title-input'); const t=inp.value.trim(); if(!t){showToast('請輸入活動名稱');return;} createEvent(t); inp.value=''; }
+});
+
+
+document.getElementById('gmap-modal-close').addEventListener('click', ()=>{
+  document.getElementById('gmap-modal-bg').classList.remove('show');
+});
+document.getElementById('gmap-modal-bg').addEventListener('click', (ev)=>{
+  if(ev.target.id==='gmap-modal-bg') document.getElementById('gmap-modal-bg').classList.remove('show');
+});
+document.getElementById('gmap-confirm-btn').addEventListener('click', async ()=>{
+  if(!gmapSelectedPlace || !gmapModalEventId) return;
+  try{
+    await recommendRestaurant(gmapModalEventId, gmapSelectedPlace.name, gmapSelectedPlace.address, gmapSelectedPlace.lat, gmapSelectedPlace.lng);
+    document.getElementById('gmap-modal-bg').classList.remove('show');
+  }catch(err){
+    console.error(err);
+    showToast('推薦失敗：'+(err.message||err.code||'未知錯誤'));
+  }
+});
+
+// settings
+function renderCoordinatorList(){
+  const el=document.getElementById('coordinator-list');
+  if(!el) return;
+  const items=Object.entries(eventCoordinators);
+  if(items.length===0){ el.innerHTML='<div class="other-label">目前沒有外食訂購人</div>'; return; }
+  el.innerHTML = items.map(([seat,data])=>{
+    const exp = data.expiresAt ? (data.expiresAt.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt)) : null;
+    const active = exp && exp.getTime() > Date.now();
+    const expStr = exp ? (exp.getMonth()+1)+'/'+exp.getDate() : '—';
+    return `<span class="name-chip">${escapeHtml(seat)}（至 ${expStr}${active?'':'・已過期'}）<button data-remove-seat="${escapeHtml(seat)}">×</button></span>`;
+  }).join('');
+}
+document.getElementById('coordinator-list').addEventListener('click', async (ev)=>{
+  const btn=ev.target.closest('[data-remove-seat]'); if(!btn) return;
+  await deleteDoc(doc(db,'eventCoordinators',btn.dataset.removeSeat));
+  showToast('已移除外食訂購人權限');
+});
+document.getElementById('add-coordinator-btn').addEventListener('click', async ()=>{
+  const raw=document.getElementById('set-coordinator-seat').value.trim();
+  if(!raw){ showToast('請輸入座號'); return; }
+  const seat=normalizeSeatNo(raw);
+  const expiresAt = Timestamp.fromDate(new Date(Date.now() + COORDINATOR_DAYS*24*60*60*1000));
+  await setDoc(doc(db,'eventCoordinators',seat), { seat, grantedBy:identity(), grantedAt:new Date().toISOString(), expiresAt }, {merge:true});
+  document.getElementById('set-coordinator-seat').value='';
+  showToast('已設定為外食訂購人，'+COORDINATOR_DAYS+' 天後自動失效');
+});
+document.getElementById('gear-btn').addEventListener('click',()=>{
+  document.getElementById('set-roster').value=settings.rosterSize;
+  document.getElementById('set-teacher').checked=settings.includeTeacher;
+  renderCoordinatorList();
+  document.getElementById('settings-bg').classList.add('show');
+  // 名冊／伙委／外食訂購人改成一次性讀取，打開設定面板時主動重新整理一次，
+  // 確保看到的是最新資料（不然可能是登入當下那一刻的舊快照）。
+  fetchStudentsRoster();
+  fetchStaffList();
+  fetchEventCoordinators();
+});
+
+document.getElementById('bell-btn').addEventListener('click',()=>{
+  renderNotifPanel();
+  document.getElementById('notif-bg').classList.add('show');
+});
+document.getElementById('notif-close-btn').addEventListener('click',()=>{
+  document.getElementById('notif-bg').classList.remove('show');
+});
+document.getElementById('notif-bg').addEventListener('click',(ev)=>{
+  if(ev.target.id==='notif-bg') document.getElementById('notif-bg').classList.remove('show');
+});
+document.getElementById('settings-cancel').addEventListener('click',()=>document.getElementById('settings-bg').classList.remove('show'));
+document.getElementById('settings-bg').addEventListener('click',(ev)=>{ if(ev.target.id==='settings-bg') document.getElementById('settings-bg').classList.remove('show'); });
+document.getElementById('settings-save').addEventListener('click', async ()=>{
+  const rosterSize=Number(document.getElementById('set-roster').value)||0;
+  const includeTeacher=document.getElementById('set-teacher').checked;
+  await setDoc(doc(db,'settings','config'), {rosterSize, includeTeacher, updatedBy:identity(), updatedAt:new Date().toISOString()}, {merge:true});
+
+  const labels=(function(){
+    const ls=[]; if(includeTeacher) ls.push('師');
+    const n=Math.max(0,Math.min(99,rosterSize));
+    for(let i=1;i<=n;i++) ls.push(String(i).padStart(2,'0'));
+    return ls;
+  })();
+  const batch=writeBatch(db);
+  labels.forEach(lab=> batch.set(doc(db,'students',lab), {name:studentsRoster[lab]?.name||'', updatedAt:new Date().toISOString()}, {merge:true}));
+  await batch.commit();
+
+  document.getElementById('settings-bg').classList.remove('show');
+  showToast('設定已儲存，名冊已同步');
+});
+document.getElementById('add-staff-btn').addEventListener('click', async ()=>{
+  const email=document.getElementById('set-staff-email').value.trim();
+  if(!email){ showToast('請輸入 Email'); return; }
+  await setDoc(doc(db,'staff',email), {addedBy:identity(), addedAt:new Date().toISOString()}, {merge:true});
+  document.getElementById('set-staff-email').value='';
+  showToast('已新增伙委權限（對方需重新整理頁面才會生效）');
+});
+
+// tabs
+document.getElementById('tab-meal-btn').addEventListener('click',()=>{ activeTab='meal'; document.getElementById('tab-meal-btn').classList.add('active'); document.getElementById('tab-event-btn').classList.remove('active'); render(); });
+document.getElementById('tab-event-btn').addEventListener('click',()=>{
+  activeTab='event'; document.getElementById('tab-event-btn').classList.add('active'); document.getElementById('tab-meal-btn').classList.remove('active'); render();
+  // 菜單改成一次性讀取，切到外食訂購頁籤時主動重新整理一次；餐廳推薦已經是
+  // onSnapshot 常駐監聽（見 subscribeAll()），不需要在這裡手動重新整理。
+  fetchEventMenu();
+  fetchEventCoordinators();
+});
+
+// ============================================================
+// 深色模式切換
+// ============================================================
+// 畫面一開始的深淺色是 <head> 那段內嵌 script 先決定好的（讀 localStorage，
+// 沒存過就跟系統設定），這裡只需要把按鈕圖示同步成目前狀態、並處理點擊切換、
+// 記住使用者「主動選過」的偏好。只有使用者自己點過，才會寫進 localStorage；
+// 沒點過的話，畫面會一直跟著系統的淺色／深色設定走。
+const THEME_COLOR = { light:'#E7F0F8', dark:'#10161E' };
+function syncThemeUI(theme){
+  const btn=document.getElementById('theme-toggle-btn');
+  if(btn){ btn.textContent = theme==='dark' ? '日' : '夜'; }
+  const meta=document.getElementById('theme-color-meta');
+  if(meta){ meta.setAttribute('content', THEME_COLOR[theme] || THEME_COLOR.light); }
+}
+syncThemeUI(document.documentElement.getAttribute('data-theme') || 'light');
+document.getElementById('theme-toggle-btn').addEventListener('click', ()=>{
+  const prev = document.documentElement.getAttribute('data-theme');
+  const next = prev==='dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('theme', next); }catch(e){}
+  syncThemeUI(next);
+  // 小彩蛋：從深色切回淺色的瞬間，隨機閃一張圖，純娛樂用，不影響任何功能。
+  if(prev==='dark' && next==='light' && Math.random() < 0.25){ triggerEasterEgg(); }
+});
+
+const EASTER_EGG_IMAGES = ['assets/egg/egg-cat.jpg','assets/egg/egg-scream.jpg','assets/egg/egg-headphones.jpg'];
+function triggerEasterEgg(){
+  const overlay = document.getElementById('egg-overlay');
+  const img = document.getElementById('egg-overlay-img');
+  if(!overlay || !img) return;
+  img.src = EASTER_EGG_IMAGES[Math.floor(Math.random()*EASTER_EGG_IMAGES.length)];
+  overlay.classList.remove('show');
+  void overlay.offsetWidth;
+  overlay.classList.add('show');
+  clearTimeout(triggerEasterEgg._t);
+  triggerEasterEgg._t = setTimeout(()=>{ overlay.classList.remove('show'); }, 950);
+}
+document.getElementById('egg-overlay').addEventListener('click', ()=>{
+  document.getElementById('egg-overlay').classList.remove('show');
+});
+
+// ============================================================
+// 一次性資料搬移：舊版「entries/{date}/lunch_choice、dinner_choice」子集合
+// →新版 entries/{date} 文件裡的 lunch.choices／dinner.choices map 欄位。
+// 冪等設計：每個座號如果新版欄位裡已經有資料就跳過，不會覆蓋掉已經搬移或
+// 之後新產生的資料，所以可以放心重複按這個按鈕，也不怕跟正在使用中的系統
+// 互相打架。搬移完成後，舊子集合資料還留著（沒有刪除），純粹當備份用。
+// ============================================================
+async function migrateLegacyChoices(){
+  showToast('開始搬移舊點餐資料，請稍候…');
+  let migratedDates = 0, migratedSeats = 0, failedDates = 0;
+  const dates = Object.keys(entries).sort();
+  for(const date of dates){
+    const fieldUpdates = {};
+    for(const meal of ['lunch','dinner']){
+      const collName = meal==='lunch' ? 'lunch_choice' : 'dinner_choice';
+      let snap;
+      try{ snap = await getDocs(collection(db,'entries',date,collName)); }
+      catch(err){ failedDates++; continue; }
+      if(snap.empty) continue;
+      const already = choiceMap(date, meal);
+      snap.forEach(d=>{
+        if(already[d.id]) return;
+        const o = d.data();
+        fieldUpdates[meal+'.choices.'+d.id] = {
+          seatNo: o.seatNo || d.id, studentId: o.studentId || d.id, name: o.name || d.id,
+          status: o.status, note: o.note || '', updatedBy: o.updatedBy || '（搬移自舊資料）',
+          updatedAt: o.updatedAt || null
+        };
+        migratedSeats++;
+      });
+    }
+    if(Object.keys(fieldUpdates).length){
+      try{ await updateDoc(doc(db,'entries',date), fieldUpdates); migratedDates++; }
+      catch(err){ failedDates++; console.error('[搬移失敗：'+date+']', err); }
+    }
+  }
+  showToast('搬移完成：共 '+migratedDates+' 天、'+migratedSeats+' 筆紀錄'+(failedDates?'（'+failedDates+' 天讀取/寫入失敗，可以重新按一次再試）':''));
+}
+document.getElementById('migrate-choices-btn').addEventListener('click', async ()=>{
+  const btn=document.getElementById('migrate-choices-btn');
+  btn.disabled=true; const orig=btn.textContent; btn.textContent='搬移中…';
+  try{ await migrateLegacyChoices(); }
+  catch(err){ console.error(err); showToast('搬移失敗：'+(err.message||err.code||'未知錯誤')); }
+  finally{ btn.disabled=false; btn.textContent=orig; }
+});
+
+// 伙委批次暫存尚未送出時，離開頁面前提醒一下，避免手滑關掉分頁弄丟還沒送出的異動。
+window.addEventListener('beforeunload', (ev)=>{
+  if(Object.keys(staffDraft).length){
+    ev.preventDefault();
+    ev.returnValue = '';
+  }
+});
+</script>
+</body>
+</html>
