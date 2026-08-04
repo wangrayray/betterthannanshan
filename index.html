@@ -3,6 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#E7F0F8" id="theme-color-meta">
+<script>
+  // 深色模式：在畫面畫出來之前先決定要用淺色還是深色，避免「先閃一下淺色、再跳成深色」。
+  // 有存過使用者手動選過的偏好就用那個，沒有的話就跟著系統的淺色／深色設定走。
+  (function(){
+    try{
+      var saved = localStorage.getItem('theme');
+      var theme = saved || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+    }catch(e){}
+  })();
+</script>
 <title>Better than nanshan｜退餐與外食訂購</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -17,13 +29,30 @@
 </script>
 <style>
   :root{
+    color-scheme:light;
     --bg:#E7F0F8; --paper:#FFFFFF; --paper-soft:#F1F6FB;
-    --ink:#14304A; --ink-soft:#52708C; --line:#CFE0EE;
+    --ink:#14304A; --ink-soft:#52708C; --ink-solid:#14304A; --line:#CFE0EE;
     --lunch:#2E8BC0; --lunch-bg:#E4F2FA;
     --dinner:#14304A; --dinner-bg:#E1E9F1;
     --danger:#C0392B; --danger-bg:#FBE7E4;
-    --mine:#0E8388; --outside:#3D5AFE; --outside-bg:#E8EBFC;
+    --mine:#0E8388; --outside:#3D5AFE; --outside-bg:#E8EBFC; --paid-bg:#E2F5F5;
     --radius:16px; --shadow:0 1px 2px rgba(20,48,74,.06),0 6px 20px rgba(20,48,74,.06);
+  }
+  /* 深色模式：同一組 CSS 變數換一套深色配色，畫面其他地方完全不用改，
+     因為所有元件的顏色本來就是透過 var(--xxx) 帶進去的。
+     --ink-solid 是特別拆出來給「純色底＋白字」的按鈕（例如主要按鈕、分頁選中、
+     Toast 提示）用的，跟純文字用的 --ink 分開，這樣淺色模式下兩者剛好同色沒差，
+     深色模式下 --ink 會變亮（body 文字要亮），但按鈕底色不能跟著變亮
+     （不然白字會看不到），所以維持成一個顯眼的藍色實色。 */
+  html[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#0B1420; --paper:#17222E; --paper-soft:#1F2C3B;
+    --ink:#E7EDF5; --ink-soft:#93A7BD; --ink-solid:#3D5AFE; --line:#2B3A4C;
+    --lunch:#4FB0E8; --lunch-bg:#12293A;
+    --dinner:#7C9CC9; --dinner-bg:#16283A;
+    --danger:#E5484D; --danger-bg:#3B1219;
+    --mine:#1FB8AE; --outside:#7C93FF; --outside-bg:#1D2440; --paid-bg:#123430;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.5);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -34,6 +63,8 @@
   .logo{width:40px;height:40px;flex-shrink:0;}
   .header h1{font-family:'Zen Maru Gothic',sans-serif;font-weight:900;font-size:20px;margin:0;}
   .header p{margin:2px 0 0;font-size:12px;color:var(--ink-soft);}
+  .theme-toggle-btn{width:36px;height:36px;flex-shrink:0;margin-left:auto;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;transition:transform .15s;}
+  .theme-toggle-btn:active{transform:scale(.88);}
 
   .id-bar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-soft);margin-bottom:14px;flex-wrap:wrap;}
   .id-bar b{color:var(--ink);}
@@ -70,14 +101,14 @@
 
   .tab-bar{display:flex;gap:8px;margin-bottom:18px;}
   .tab-btn{flex:1;font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:14px;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);cursor:pointer;}
-  .tab-btn.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .tab-btn.active{background:var(--ink-solid);color:#fff;border-color:var(--ink-solid);}
 
   .add-bar{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;display:flex;gap:10px;align-items:center;margin-bottom:22px;flex-wrap:wrap;}
   .add-bar label{font-size:13px;color:var(--ink-soft);font-weight:500;white-space:nowrap;}
   .add-bar input[type=date],.add-bar input[type=text]{font-family:inherit;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:14px;background:var(--paper-soft);color:var(--ink);flex:1;min-width:140px;}
   .btn{font-family:inherit;border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;transition:transform .08s,opacity .15s;}
   .btn:active{transform:scale(.96);}
-  .btn-primary{background:var(--ink);color:#fff;}
+  .btn-primary{background:var(--ink-solid);color:#fff;}
   .btn-ghost{background:var(--paper-soft);color:var(--ink);border:1px solid var(--line);}
   .btn-outside{background:var(--outside);color:#fff;}
   .btn:hover{opacity:.85;}
@@ -109,7 +140,7 @@
 
   .date-note{margin-top:2px;}
   .date-note .note-label{font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;}
-  .date-note-input{width:100%;min-height:48px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;background:#fff;resize:vertical;}
+  .date-note-input{width:100%;min-height:48px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--paper);color:var(--ink);resize:vertical;}
   .meal-card{border-radius:12px;padding:12px;}
   .meal-card.lunch{background:var(--lunch-bg);}
   .meal-card.dinner{background:var(--dinner-bg);}
@@ -121,7 +152,7 @@
 
   .field-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
   .field-row label{font-size:12px;color:var(--ink-soft);white-space:nowrap;}
-  .field-row input[type=number]{width:64px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:14px;text-align:center;background:#fff;}
+  .field-row input[type=number]{width:64px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:14px;text-align:center;background:var(--paper);color:var(--ink);}
   .field-row .static{font-size:14px;font-weight:700;}
 
   .section-label{font-size:12px;color:var(--ink-soft);margin-bottom:6px;}
@@ -132,25 +163,25 @@
   .number-cell:active{transform:scale(.88);}
   .meal-card.lunch .number-cell.on{background:var(--lunch);color:#fff;}
   .meal-card.dinner .number-cell.on{background:var(--dinner);color:#fff;}
-  .number-cell.off{background:#fff;color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
+  .number-cell.off{background:var(--paper);color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
   .number-cell.mine{box-shadow:0 0 0 2px var(--mine);}
-  .number-cell.outside-cell{background:#fff;color:var(--ink-soft);border:1px dashed var(--line);}
+  .number-cell.outside-cell{background:var(--paper);color:var(--ink-soft);border:1px dashed var(--line);}
   .number-cell.outside-cell.active{background:var(--outside);color:#fff;border-color:var(--outside);}
-  .number-cell.unset{background:#fff;color:var(--ink-soft);border:1px dashed var(--line);}
+  .number-cell.unset{background:var(--paper);color:var(--ink-soft);border:1px dashed var(--line);}
   .meal-card.lunch .number-cell.meat{background:var(--lunch);color:#fff;}
   .meal-card.dinner .number-cell.meat{background:var(--dinner);color:#fff;}
   .number-cell.veg{background:var(--mine);color:#fff;}
-  .number-cell.cancel{background:#fff;color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
+  .number-cell.cancel{background:var(--paper);color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
   .meal-summary{font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.7;}
   .meal-summary b{color:var(--ink);}
   .same-as-btn{display:block;width:100%;font-family:inherit;border:1px dashed var(--outside);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;background:var(--outside-bg);color:var(--outside);cursor:pointer;margin-bottom:8px;text-align:center;}
   .choice-buttons{display:flex;gap:8px;margin-bottom:8px;}
-  .choice-btn{flex:1;font-family:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 6px;font-size:13px;font-weight:700;background:#fff;color:var(--ink-soft);cursor:pointer;text-align:center;}
+  .choice-btn{flex:1;font-family:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 6px;font-size:13px;font-weight:700;background:var(--paper);color:var(--ink-soft);cursor:pointer;text-align:center;}
   .meal-card.lunch .choice-btn.active.meat{background:var(--lunch);color:#fff;border-color:var(--lunch);}
   .meal-card.dinner .choice-btn.active.meat{background:var(--dinner);color:#fff;border-color:var(--dinner);}
   .choice-btn.active.veg{background:var(--mine);color:#fff;border-color:var(--mine);}
   .choice-btn.active.cancel{background:var(--danger);color:#fff;border-color:var(--danger);}
-  .note-input{width:100%;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:12.5px;background:#fff;margin-top:2px;}
+  .note-input{width:100%;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:12.5px;background:var(--paper);color:var(--ink);margin-top:2px;}
   .note-input:disabled{background:var(--paper-soft);color:var(--ink-soft);}
   .submit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);}
   .submit-row .submit-status{font-size:11.5px;color:var(--ink-soft);}
@@ -158,14 +189,14 @@
   .submit-row .btn-submit-choice{padding:7px 14px;font-size:12.5px;}
 
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
-  .name-chip{display:flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 6px 4px 10px;font-size:12.5px;}
+  .name-chip{display:flex;align-items:center;gap:5px;background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:4px 6px 4px 10px;font-size:12.5px;}
   .name-chip button{border:none;background:var(--danger-bg);color:var(--danger);width:16px;height:16px;border-radius:50%;font-size:11px;cursor:pointer;}
   .add-name-row{display:flex;gap:6px;margin-bottom:10px;}
-  .add-name-row input[type=text]{flex:1;min-width:0;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px;background:#fff;}
-  .add-name-row button{border:none;border-radius:8px;background:var(--ink);color:#fff;font-size:12.5px;font-weight:700;padding:0 12px;cursor:pointer;}
+  .add-name-row input[type=text]{flex:1;min-width:0;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px;background:var(--paper);color:var(--ink);}
+  .add-name-row button{border:none;border-radius:8px;background:var(--ink-solid);color:#fff;font-size:12.5px;font-weight:700;padding:0 12px;cursor:pointer;}
   .other-label{font-size:11px;color:var(--ink-soft);margin:2px 0 4px;}
 
-  .own-toggle{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+  .own-toggle{display:flex;align-items:center;justify-content:space-between;background:var(--paper);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
   .own-toggle .lab{font-size:13px;font-weight:700;}
   .switch{position:relative;width:46px;height:26px;border-radius:20px;background:var(--line);cursor:pointer;flex-shrink:0;}
   .switch.on{background:var(--danger);}
@@ -184,7 +215,7 @@
   .event-meta{font-size:11.5px;color:var(--ink-soft);display:flex;gap:10px;flex-wrap:wrap;}
   .event-body{padding:14px 16px;background:var(--outside-bg);}
   .outside-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;}
-  .outside-row{display:flex;align-items:center;gap:6px;background:#fff;border-radius:8px;padding:5px 8px;}
+  .outside-row{display:flex;align-items:center;gap:6px;background:var(--paper);border-radius:8px;padding:5px 8px;}
   .outside-name{font-size:12.5px;font-weight:700;width:40px;flex-shrink:0;}
   .outside-currency{font-size:11.5px;color:var(--ink-soft);}
   .outside-amount{width:70px;font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:13px;text-align:right;}
@@ -192,17 +223,17 @@
   .outside-total{font-size:13px;font-weight:700;color:var(--outside);margin-top:4px;}
   .paid-check{display:flex;align-items:center;margin-right:2px;flex-shrink:0;}
   .paid-check input{width:17px;height:17px;cursor:pointer;accent-color:var(--mine);}
-  .outside-row.paid{background:#E2F5F5;}
+  .outside-row.paid{background:var(--paid-bg);}
   .paid-tag{color:var(--mine);font-weight:700;}
   .rec-section{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);}
   .rec-search-row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px;}
-  .rec-search-row .rec-search-input{flex:1;min-width:140px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;background:#fff;}
+  .rec-search-row .rec-search-input{flex:1;min-width:140px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;background:var(--paper);color:var(--ink);}
   .rec-search-results{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
   .rec-manual-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
-  .rec-manual-row .rec-manual-input{flex:1;min-width:140px;font-family:inherit;border:1px dashed var(--line);border-radius:8px;padding:7px 9px;font-size:12.5px;background:#fff;}
-  .rec-result-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px dashed var(--outside);border-radius:8px;padding:7px 10px;}
+  .rec-manual-row .rec-manual-input{flex:1;min-width:140px;font-family:inherit;border:1px dashed var(--line);border-radius:8px;padding:7px 9px;font-size:12.5px;background:var(--paper);color:var(--ink);}
+  .rec-result-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--paper);border:1px dashed var(--outside);border-radius:8px;padding:7px 10px;}
   .rec-list{display:flex;flex-direction:column;gap:6px;}
-  .rec-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border-radius:8px;padding:7px 10px;flex-wrap:wrap;}
+  .rec-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--paper);border-radius:8px;padding:7px 10px;flex-wrap:wrap;}
   .rec-info{display:flex;flex-direction:column;gap:1px;}
   .rec-name{font-size:13px;font-weight:700;}
   .rec-count{font-size:11.5px;color:var(--outside);font-weight:700;margin-left:6px;}
@@ -249,7 +280,7 @@
   .confirm-panel p{font-size:13.5px;margin:0 0 16px;}
   .confirm-actions{display:flex;justify-content:center;gap:8px;}
 
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:60;max-width:80vw;text-align:center;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink-solid);color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:60;max-width:80vw;text-align:center;}
   .toast.show{opacity:1;}
   .pending-note{font-size:11.5px;color:var(--danger);background:var(--danger-bg);border-radius:10px;padding:8px 12px;margin-bottom:14px;}
 </style>
@@ -266,6 +297,7 @@
       <path d="M4 14 L24 4 L44 14" stroke="#14304A" stroke-width="2" fill="none" stroke-linejoin="round"/>
     </svg>
     <div><h1>比南山更好</h1><p>退餐紀錄・外食訂購（比南山成為更好的南山）</p></div>
+    <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="切換深色／淺色模式" aria-label="切換深色／淺色模式">🌙</button>
   </div>
 
   <div class="id-bar">
@@ -1916,6 +1948,28 @@ document.getElementById('add-staff-btn').addEventListener('click', async ()=>{
 // tabs
 document.getElementById('tab-meal-btn').addEventListener('click',()=>{ activeTab='meal'; document.getElementById('tab-meal-btn').classList.add('active'); document.getElementById('tab-event-btn').classList.remove('active'); render(); });
 document.getElementById('tab-event-btn').addEventListener('click',()=>{ activeTab='event'; document.getElementById('tab-event-btn').classList.add('active'); document.getElementById('tab-meal-btn').classList.remove('active'); render(); });
+
+// ============================================================
+// 深色模式切換
+// ============================================================
+// 畫面一開始的深淺色是 <head> 那段內嵌 script 先決定好的（讀 localStorage，
+// 沒存過就跟系統設定），這裡只需要把按鈕圖示同步成目前狀態、並處理點擊切換、
+// 記住使用者「主動選過」的偏好。只有使用者自己點過，才會寫進 localStorage；
+// 沒點過的話，畫面會一直跟著系統的淺色／深色設定走。
+const THEME_COLOR = { light:'#E7F0F8', dark:'#0B1420' };
+function syncThemeUI(theme){
+  const btn=document.getElementById('theme-toggle-btn');
+  if(btn){ btn.textContent = theme==='dark' ? '☀️' : '🌙'; }
+  const meta=document.getElementById('theme-color-meta');
+  if(meta){ meta.setAttribute('content', THEME_COLOR[theme] || THEME_COLOR.light); }
+}
+syncThemeUI(document.documentElement.getAttribute('data-theme') || 'light');
+document.getElementById('theme-toggle-btn').addEventListener('click', ()=>{
+  const next = document.documentElement.getAttribute('data-theme')==='dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('theme', next); }catch(e){}
+  syncThemeUI(next);
+});
 </script>
 </body>
 </html>
