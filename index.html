@@ -341,7 +341,11 @@
   <div class="panel">
     <h3>登入</h3>
     <div class="sub">使用 Firebase 帳號登入。如果密碼輸入錯誤，系統會直接擋下並顯示錯誤，不會誤建立新帳號；第一次使用請按「還沒有帳號？註冊新帳號」——請務必記住密碼，之後無法在前端重設。</div>
-    <div class="role-block">
+    <div class="tab-bar" style="margin-bottom:14px;">
+      <button type="button" class="tab-btn active" id="role-select-staff">👩‍🍳 伙委</button>
+      <button type="button" class="tab-btn" id="role-select-student">🎓 同學</button>
+    </div>
+    <div class="role-block" id="role-block-staff">
       <h4>👩‍🍳 伙委登入</h4>
       <div class="sub" style="margin-bottom:8px;">請使用你的個人 Email。註冊帳號後，需請管理員在 Firestore 的 staff collection 新增你的權限才能進入伙委端。</div>
       <input type="text" id="staff-email-input" placeholder="Email" autocomplete="username">
@@ -349,7 +353,7 @@
       <button class="btn btn-primary" id="staff-login-btn">登入</button>
       <button class="btn btn-ghost" type="button" id="staff-register-btn">還沒有帳號？註冊新帳號</button>
     </div>
-    <div class="role-block">
+    <div class="role-block" id="role-block-student" style="display:none;">
       <h4>🎓 同學登入</h4>
       <div class="sub" style="margin-bottom:8px;">用你的座號登入（跟退餐點選格一樣，例如 05、師）。</div>
       <input type="text" id="student-id-input" placeholder="座號" autocomplete="username">
@@ -606,6 +610,18 @@ async function registerFlow(email, password, isStudentRegister){
   }
 }
 
+document.getElementById('role-select-staff').addEventListener('click', ()=>{
+  document.getElementById('role-select-staff').classList.add('active');
+  document.getElementById('role-select-student').classList.remove('active');
+  document.getElementById('role-block-staff').style.display='block';
+  document.getElementById('role-block-student').style.display='none';
+});
+document.getElementById('role-select-student').addEventListener('click', ()=>{
+  document.getElementById('role-select-student').classList.add('active');
+  document.getElementById('role-select-staff').classList.remove('active');
+  document.getElementById('role-block-student').style.display='block';
+  document.getElementById('role-block-staff').style.display='none';
+});
 document.getElementById('staff-login-btn').addEventListener('click', async ()=>{
   const email=document.getElementById('staff-email-input').value.trim();
   const pw=document.getElementById('staff-pw-input').value;
