@@ -52,6 +52,16 @@
   .notif-time{font-size:11px;color:var(--ink-soft);}
   .notif-close{display:flex;justify-content:flex-end;margin-top:12px;}
 
+  .tutorial-overlay{position:fixed;inset:0;z-index:80;pointer-events:none;display:none;}
+  .tutorial-spotlight{position:fixed;left:0;top:0;width:0;height:0;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.85);border:2px solid var(--outside);transition:left .25s ease,top .25s ease,width .25s ease,height .25s ease;pointer-events:none;}
+  .tutorial-sidebar{position:fixed;top:0;right:0;height:100%;width:300px;max-width:86vw;background:var(--paper);z-index:81;box-shadow:-4px 0 24px rgba(20,48,74,.3);padding:22px 20px;display:none;flex-direction:column;overflow-y:auto;}
+  .tutorial-step-count{font-size:11px;color:var(--outside);font-weight:700;margin-bottom:8px;letter-spacing:.04em;text-transform:uppercase;}
+  .tutorial-sidebar h3{margin:0 0 10px;font-family:'Zen Maru Gothic',sans-serif;font-size:18px;color:var(--ink);}
+  .tutorial-sidebar p{font-size:13.5px;line-height:1.75;color:var(--ink-soft);flex:1;margin:0;}
+  .tutorial-nav{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:18px;}
+  .tutorial-btn{font-family:inherit;border:none;background:none;color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:12px;padding:0;}
+  .tutorial-link-btn{border:none;background:none;color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:12px;padding:0;margin-left:8px;}
+
   .tab-bar{display:flex;gap:8px;margin-bottom:18px;}
   .tab-btn{flex:1;font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:14px;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);cursor:pointer;}
   .tab-btn.active{background:var(--ink);color:#fff;border-color:var(--ink);}
@@ -260,6 +270,7 @@
   <div class="id-bar">
     身份：<b id="who-label">尚未登入</b>
     <button id="who-change-btn">登出 / 切換帳號</button>
+    <button class="tutorial-link-btn" id="tutorial-replay-btn" style="display:none;">📖 新手教學</button>
     <button class="bell-btn" id="bell-btn" title="退餐通知（伙委）" style="display:none;">🔔<span class="bell-badge" id="bell-badge">0</span></button>
     <button class="gear-btn" id="gear-btn" title="座號設定（伙委）" style="display:none;">⚙️</button>
   </div>
@@ -347,6 +358,20 @@
   <div class="confirm-panel">
     <p id="confirm-text"></p>
     <div class="confirm-actions"><button class="btn btn-ghost" id="confirm-no">取消</button><button class="btn btn-primary" id="confirm-yes">確定</button></div>
+  </div>
+</div>
+
+<div class="tutorial-overlay" id="tutorial-overlay"><div class="tutorial-spotlight" id="tutorial-spotlight"></div></div>
+<div class="tutorial-sidebar" id="tutorial-sidebar">
+  <div class="tutorial-step-count" id="tutorial-step-count"></div>
+  <h3 id="tutorial-title"></h3>
+  <p id="tutorial-desc"></p>
+  <div class="tutorial-nav">
+    <button type="button" class="tutorial-btn" id="tutorial-skip">跳過教學</button>
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-ghost" id="tutorial-prev">上一步</button>
+      <button type="button" class="btn btn-primary" id="tutorial-next">下一步</button>
+    </div>
   </div>
 </div>
 
@@ -483,6 +508,8 @@ let myEmail = '';
 let activeTab = 'meal';
 let confirmResolve = null;
 let unsubs = [];
+let pendingTutorialForNewStudent = false; // 剛完成「同學」註冊，登入完成後要自動播放新手教學
+let tutorialIdx = 0;
 
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function uid(){ return Math.random().toString(36).slice(2,9); }
@@ -555,12 +582,17 @@ async function loginFlow(email, password){
     showToast('登入失敗：'+authErrMsg(err));
   }
 }
-async function registerFlow(email, password){
+async function registerFlow(email, password, isStudentRegister){
   const ok = await showConfirm('確定要用「'+email+'」建立新帳號嗎？請務必記住密碼，之後無法在前端重設。');
   if(!ok) return;
+  // 只有「同學」第一次註冊才需要新手教學，伙委不用。要在呼叫 Firebase 的註冊
+  // API「之前」先設定這個旗標，因為 onAuthStateChanged 可能在 await 完成之前
+  // 就已經觸發，如果晚一步設定旗標，resolveRoleAndBoot() 讀到的可能還是舊值。
+  if(isStudentRegister) pendingTutorialForNewStudent = true;
   try{
     await createUserWithEmailAndPassword(auth, email, password);
   }catch(err){
+    pendingTutorialForNewStudent = false;
     showToast('註冊失敗：'+authErrMsg(err));
   }
 }
@@ -589,7 +621,7 @@ document.getElementById('student-register-btn').addEventListener('click', async 
   const pw=document.getElementById('student-pw-input').value;
   if(!raw||!pw){ showToast('請輸入座號與密碼'); return; }
   const sid=normalizeSeatNo(raw);
-  await registerFlow(sid+'@'+CLASS_DOMAIN, pw);
+  await registerFlow(sid+'@'+CLASS_DOMAIN, pw, true);
 });
 document.getElementById('who-change-btn').addEventListener('click', async ()=>{
   if(!auth.currentUser){ document.getElementById('role-bg').classList.add('show'); return; }
@@ -613,7 +645,97 @@ async function resolveRoleAndBoot(user){
   applyRoleUI();
   document.getElementById('role-bg').classList.remove('show');
   subscribeAll();
+
+  if(role==='student' && pendingTutorialForNewStudent){
+    pendingTutorialForNewStudent = false;
+    // 等第一批 Firestore 資料回來、畫面實際渲染出日期卡片之後再開始教學，
+    // 這樣「選擇餐點」「確定送出」那幾步才有真正的按鈕可以聚光燈標示。
+    setTimeout(()=>{ startTutorial(); }, 900);
+  }
 }
+
+// ============================================================
+// 新手教學（只給同學，伙委不需要）：全黑背景 + 聚光燈聚焦在按鈕上，
+// 說明文字放在右側側邊欄。每一步指定要聚焦的按鈕選擇器，如果那個按鈕
+// 現在畫面上還沒出現（例如伙委還沒建立今天的紀錄），就退回顯示替代說明文字，
+// 不會卡住整個教學流程。
+// ============================================================
+const TUTORIAL_STEPS = [
+  { title:'歡迎加入班務系統 👋', desc:'讓我們花 30 秒認識一下這個網頁怎麼用。點「下一步」開始。' },
+  { selector:'#tab-bar', tab:'meal', title:'兩個主要頁面', desc:'上面這兩個按鈕可以切換「退餐紀錄」和「外食訂購」兩個頁面。' },
+  { selector:'.date-card:not(.collapsed) .choice-buttons', tab:'meal',
+    title:'選擇今天的餐點', desc:'找到今天的日期卡片，點「🍖 葷食」「🥦 素食」或「🚫 退餐」告訴伙委你的選擇。再點一次同一個按鈕可以取消選擇。',
+    fallback:'伙委建立當天的紀錄後，這個位置會出現「🍖 葷食」「🥦 素食」「🚫 退餐」三個按鈕，點一下就能選擇；再點一次同一個可以取消。' },
+  { selector:'.date-card:not(.collapsed) .btn-submit-choice', tab:'meal',
+    title:'選完要按「確定送出」', desc:'選好之後一定要按這顆「確定送出」，伙委才看得到你的選擇；不按的話只是暫存在你自己的畫面上而已。',
+    fallback:'跟上一步一樣，等伙委建立當天的紀錄後，選完餐點右下角會出現「確定送出」按鈕，記得要按下去才算數。' },
+  { selector:'#tab-event-btn', tab:'meal', title:'外食訂購', desc:'如果伙委開放合購／外食訂購活動，可以點這裡切換過去，選你要的品項和數量。' },
+  { selector:'#who-change-btn', title:'登出／切換帳號', desc:'這裡可以登出，或是切換成別的座號登入（例如借同學的裝置時）。' },
+  { title:'教學結束 🎉', desc:'之後如果想再看一次，可以點畫面上方的「📖 新手教學」重新開始。' }
+];
+function tutorialPositionSpotlight(el){
+  const box=document.getElementById('tutorial-spotlight');
+  if(!el){ box.style.width='0px'; box.style.height='0px'; return; }
+  const r=el.getBoundingClientRect();
+  const pad=6;
+  box.style.left=(r.left-pad)+'px';
+  box.style.top=(r.top-pad)+'px';
+  box.style.width=(r.width+pad*2)+'px';
+  box.style.height=(r.height+pad*2)+'px';
+}
+function renderTutorialStep(){
+  const step=TUTORIAL_STEPS[tutorialIdx];
+  if(step.tab && step.tab!==activeTab){
+    activeTab=step.tab;
+    document.getElementById('tab-meal-btn').classList.toggle('active', activeTab==='meal');
+    document.getElementById('tab-event-btn').classList.toggle('active', activeTab==='event');
+    render();
+  }
+  // 展開第一張日期卡片，這樣退餐選項才有機會顯示出來給聚光燈標示
+  if(activeTab==='meal'){
+    const firstCard=document.querySelector('.date-card');
+    if(firstCard && firstCard.classList.contains('collapsed')){
+      collapsedDates.delete(firstCard.dataset.datecard);
+      render();
+    }
+  }
+  requestAnimationFrame(()=>{
+    const el = step.selector ? document.querySelector(step.selector) : null;
+    tutorialPositionSpotlight(el);
+    document.getElementById('tutorial-step-count').textContent = '步驟 '+(tutorialIdx+1)+' / '+TUTORIAL_STEPS.length;
+    document.getElementById('tutorial-title').textContent = step.title;
+    document.getElementById('tutorial-desc').textContent = (step.selector && !el && step.fallback) ? step.fallback : step.desc;
+    document.getElementById('tutorial-prev').style.visibility = tutorialIdx===0 ? 'hidden' : 'visible';
+    document.getElementById('tutorial-next').textContent = tutorialIdx===TUTORIAL_STEPS.length-1 ? '完成' : '下一步';
+    if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
+  });
+}
+function startTutorial(){
+  tutorialIdx=0;
+  document.getElementById('tutorial-overlay').style.display='block';
+  document.getElementById('tutorial-sidebar').style.display='flex';
+  renderTutorialStep();
+}
+function endTutorial(){
+  document.getElementById('tutorial-overlay').style.display='none';
+  document.getElementById('tutorial-sidebar').style.display='none';
+  try{ localStorage.setItem('tutorialDone_v1','1'); }catch(e){}
+}
+document.getElementById('tutorial-next').addEventListener('click', ()=>{
+  if(tutorialIdx>=TUTORIAL_STEPS.length-1){ endTutorial(); return; }
+  tutorialIdx++; renderTutorialStep();
+});
+document.getElementById('tutorial-prev').addEventListener('click', ()=>{
+  if(tutorialIdx>0){ tutorialIdx--; renderTutorialStep(); }
+});
+document.getElementById('tutorial-skip').addEventListener('click', endTutorial);
+document.getElementById('tutorial-replay-btn').addEventListener('click', startTutorial);
+window.addEventListener('resize', ()=>{
+  if(document.getElementById('tutorial-overlay').style.display==='block'){
+    const step=TUTORIAL_STEPS[tutorialIdx];
+    tutorialPositionSpotlight(step.selector ? document.querySelector(step.selector) : null);
+  }
+});
 
 function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); unsubs=[]; }
 
@@ -645,6 +767,7 @@ function applyRoleUI(){
   document.getElementById('who-label').textContent = label;
   document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-block' : 'none';
   document.getElementById('bell-btn').style.display = role==='staff' ? 'inline-block' : 'none';
+  document.getElementById('tutorial-replay-btn').style.display = role==='student' ? 'inline-block' : 'none';
   document.getElementById('tab-bar').style.display = role ? 'flex' : 'none';
   updateBellBadge();
 }
