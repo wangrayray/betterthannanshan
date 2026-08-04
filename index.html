@@ -425,7 +425,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
-  collection, collectionGroup, getDocs, onSnapshot, writeBatch, runTransaction, serverTimestamp, Timestamp
+  collection, collectionGroup, getDocs, onSnapshot, writeBatch, runTransaction, serverTimestamp, Timestamp,
+  query, where, orderBy,
+  persistentLocalCache, persistentMultipleTabManager
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // 你的 Firebase 專案設定（已依你提供的內容填入）
@@ -450,7 +452,16 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 // 用 experimentalAutoDetectLongPolling 避免在學校/公司網路（會擋住持續串流連線）
 // 下 Firestore 即時更新（onSnapshot）連不上、資料寫進去了畫面卻不會更新的問題。
-const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true, useFetchStreams: false });
+// 安全性/成本強化：開啟本機持久化快取（IndexedDB）。沒開的話，每次重新整理頁面
+// 或網路重新連線，所有 onSnapshot 監聽都要把整個 collection 重讀一遍，很燒讀取
+// 額度；開了之後 SDK 會從本機快取先還原畫面，重新連線時只補「有變動」的差異，
+// 大幅減少重複讀取。用 multiple tab manager，允許同一台裝置開多個分頁也不會互
+// 相搶快取或降級成記憶體模式。
+const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+  useFetchStreams: false,
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
 
 // ============================================================
 // 狀態
@@ -549,6 +560,7 @@ let draftChoice = {};    // "date|meal" -> {status,note}  同學按選項時的�
 
 let collapsedDates = new Set();
 let defaultedCollapseDates = new Set();
+let loadedOldMealDates = new Set(); // 已經按需補讀過（超出即時監聽時間窗）的日期
 let role = '';          // 'staff' | 'student' | ''
 let staffName = '';
 let studentId = '';
@@ -559,6 +571,16 @@ let unsubs = [];
 let tutorialIdx = 0;
 
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// 讀取量優化：lunch_choice／dinner_choice 只用即時監聽「最近 RECENT_MEAL_DAYS 天」
+// 的資料，太舊的資料不需要即時同步（早就截止、不會再變動），展開更舊的週次時
+// 才按需讀一次（見 ensureMealChoicesLoaded）。這樣同時在線的人數不會讓每一筆
+// 舊資料的讀取量被重複放大。
+const RECENT_MEAL_DAYS = 14;
+function recentCutoffDate(){
+  const d = new Date();
+  d.setDate(d.getDate() - RECENT_MEAL_DAYS);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function normalizeSeatNo(v){
   v = String(v||'').trim();
@@ -885,6 +907,7 @@ function teardownState(){
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
   defaultedCollapseDates=new Set();
+  loadedOldMealDates=new Set();
 }
 
 onAuthStateChanged(auth, async (user)=>{
@@ -914,37 +937,105 @@ function applyRoleUI(){
 // ============================================================
 // 即時資料訂閱（Firestore onSnapshot）
 // ============================================================
+// 除錯用：監聽器/讀取如果失敗，直接印出錯誤並跳 toast，這樣才不會發生
+// 「資料寫進去了但畫面永遠不會更新」卻完全看不出原因的狀況。
+function subErr(label){
+  return (err)=>{
+    console.error('[讀取失敗：'+label+']', err);
+    showToast('資料讀取失敗（'+label+'）：'+(err && (err.message||err.code) || '未知錯誤'));
+  };
+}
+
+// ============================================================
+// 讀取量優化：students／staff／eventCoordinators／menu／recommendations
+// 這幾個不太需要「即時性」的資料，改成「需要的時候才讀一次」（getDocs），
+// 不整個 session 都保持 onSnapshot 訂閱。原本每個人登入都會訂閱全部 11 個
+// collection，只要任何人寫入一筆，所有還開著頁面的人都會被重新推播一次、
+// 各自再讀一次，讀取量等於「寫入次數 × 同時在線人數」，很容易衝高
+// Firestore 免費額度。這幾個 collection 資料量小、變動不頻繁（名冊、伙委、
+// 菜單、餐廳推薦），改成一次性讀取＋在使用者實際會用到的時機（開啟座號設
+// 定／切到外食訂購頁）主動重新整理一次即可，不需要真的做到即時同步。
+// ============================================================
+async function fetchStudentsRoster(){
+  try{
+    const snap = await getDocs(collection(db,'students'));
+    studentsRoster={}; snap.forEach(d=>studentsRoster[d.id]=d.data());
+    render();
+  }catch(err){ subErr('students')(err); }
+}
+async function fetchStaffList(){
+  try{
+    const snap = await getDocs(collection(db,'staff'));
+    staffList={}; snap.forEach(d=>staffList[d.id]=d.data());
+  }catch(err){ /* 同學本來就沒有讀取權限，這裡預期會失敗，忽略即可 */ }
+}
+async function fetchEventCoordinators(){
+  try{
+    const snap = await getDocs(collection(db,'eventCoordinators'));
+    eventCoordinators={}; snap.forEach(d=>eventCoordinators[d.id]=d.data());
+    applyRoleUI();
+    renderCoordinatorList();
+    render();
+  }catch(err){ subErr('eventCoordinators')(err); }
+}
+async function fetchEventMenu(){
+  try{
+    const snap = await getDocs(collectionGroup(db,'menu'));
+    const grouped={};
+    snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
+    eventMenu=grouped; render();
+  }catch(err){ subErr('menu')(err); }
+}
+async function fetchEventRecommendations(){
+  try{
+    const snap = await getDocs(collectionGroup(db,'recommendations'));
+    const grouped={};
+    snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
+    eventRecommendations=grouped; render();
+  }catch(err){ subErr('recommendations')(err); }
+}
+// 座號設定面板打開、或切到外食訂購頁籤時，各自呼叫對應的 refresh 函式重新整
+// 理一次即可（見下面 gear-btn / tab-event-btn 的事件監聽）。
+
+// 展開「監聽窗口以外」（超過 RECENT_MEAL_DAYS 天）的舊日期時，按需讀一次該
+// 日期的 lunch_choice／dinner_choice，讀完就快取起來（loadedOldMealDates），
+// 之後同一個 session 內再次展開就不會重複讀取。這些舊資料早就截止不會再變
+// 動，所以用一次性 getDocs 就夠，不需要 onSnapshot 常駐訂閱。
+async function ensureMealChoicesLoaded(date){
+  if(!date || date >= recentCutoffDate()) return; // 監聽窗口內的資料已經有即時訂閱
+  if(loadedOldMealDates.has(date)) return;
+  loadedOldMealDates.add(date);
+  try{
+    const [lunchSnap, dinnerSnap] = await Promise.all([
+      getDocs(query(collectionGroup(db,'lunch_choice'), where('date','==',date))),
+      getDocs(query(collectionGroup(db,'dinner_choice'), where('date','==',date)))
+    ]);
+    lunchChoice[date] = lunchSnap.docs.map(d=>({id:d.id, ...d.data()}));
+    dinnerChoice[date] = dinnerSnap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }catch(err){
+    loadedOldMealDates.delete(date); // 讀取失敗的話允許下次重試
+    subErr('lunch_choice/dinner_choice（舊日期）')(err);
+  }
+}
+async function ensureMealChoicesLoadedForWeek(wk){
+  const ds = Object.keys(entries).filter(d=>weekKey(d)===wk);
+  await Promise.all(ds.map(ensureMealChoicesLoaded));
+}
+
 function subscribeAll(){
   teardownListeners();
-  const noop=()=>{};
-  // 除錯用：這些監聽器如果連線/讀取失敗，直接印出錯誤並跳 toast，
-  // 這樣才不會發生「資料寫進去了但畫面永遠不會更新」卻完全看不出原因的狀況。
-  function subErr(label){
-    return (err)=>{
-      console.error('[監聽失敗：'+label+']', err);
-      showToast('資料讀取失敗（'+label+'）：'+(err && (err.message||err.code) || '未知錯誤'));
-    };
-  }
 
   unsubs.push(onSnapshot(doc(db,'settings','config'), snap=>{
     if(snap.exists()) settings=Object.assign({rosterSize:49,includeTeacher:true}, snap.data());
     render();
   }, subErr('settings')));
 
-  unsubs.push(onSnapshot(collection(db,'students'), snap=>{
-    studentsRoster={}; snap.forEach(d=>studentsRoster[d.id]=d.data()); render();
-  }, subErr('students')));
-
-  unsubs.push(onSnapshot(collection(db,'staff'), snap=>{
-    staffList={}; snap.forEach(d=>staffList[d.id]=d.data());
-  }, noop)); // 同學本來就沒有讀取權限，這裡預期會失敗，用 noop 忽略即可
-
-  unsubs.push(onSnapshot(collection(db,'eventCoordinators'), snap=>{
-    eventCoordinators={}; snap.forEach(d=>eventCoordinators[d.id]=d.data());
-    applyRoleUI();
-    renderCoordinatorList();
-    render();
-  }, subErr('eventCoordinators')));
+  fetchStudentsRoster();
+  fetchStaffList();
+  fetchEventCoordinators();
+  fetchEventMenu();
+  fetchEventRecommendations();
 
   unsubs.push(onSnapshot(collection(db,'entries'), snap=>{
     snap.docChanges().forEach(ch=>{
@@ -954,16 +1045,24 @@ function subscribeAll(){
     render();
   }, subErr('entries')));
 
-  unsubs.push(onSnapshot(collectionGroup(db,'lunch_choice'), snap=>{
+  // 只監聽「最近 RECENT_MEAL_DAYS 天」的退餐/點餐紀錄，更舊的資料改成使用者
+  // 實際展開該週次時才用 fetchOldMealChoices() 按需讀一次（見下方）。
+  const mealCutoff = recentCutoffDate();
+  unsubs.push(onSnapshot(query(collectionGroup(db,'lunch_choice'), where('date','>=',mealCutoff)), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
-    lunchChoice=grouped; render();
+    // 保留舊資料（按需讀取進來的），只覆蓋監聽窗口內的日期
+    Object.keys(lunchChoice).forEach(d=>{ if(d>=mealCutoff) delete lunchChoice[d]; });
+    Object.assign(lunchChoice, grouped);
+    render();
   }, subErr('lunch_choice')));
 
-  unsubs.push(onSnapshot(collectionGroup(db,'dinner_choice'), snap=>{
+  unsubs.push(onSnapshot(query(collectionGroup(db,'dinner_choice'), where('date','>=',mealCutoff)), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
-    dinnerChoice=grouped; render();
+    Object.keys(dinnerChoice).forEach(d=>{ if(d>=mealCutoff) delete dinnerChoice[d]; });
+    Object.assign(dinnerChoice, grouped);
+    render();
   }, subErr('dinner_choice')));
 
   unsubs.push(onSnapshot(collection(db,'events'), snap=>{
@@ -974,23 +1073,13 @@ function subscribeAll(){
     render();
   }, subErr('events')));
 
-  unsubs.push(onSnapshot(collectionGroup(db,'menu'), snap=>{
-    const grouped={};
-    snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
-    eventMenu=grouped; render();
-  }, subErr('menu')));
-
   unsubs.push(onSnapshot(collectionGroup(db,'orders'), snap=>{
     const grouped={};
     snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
     eventOrders=grouped; render();
   }, subErr('orders')));
-
-  unsubs.push(onSnapshot(collectionGroup(db,'recommendations'), snap=>{
-    const grouped={};
-    snap.forEach(d=>{ const data=d.data(); const eid=data.eventId; if(!eid) return; (grouped[eid]=grouped[eid]||[]).push({id:d.id, ...data}); });
-    eventRecommendations=grouped; render();
-  }, subErr('recommendations')));
+  // menu／recommendations 改成一次性讀取，見上面 fetchEventMenu()／
+  // fetchEventRecommendations()，這裡不再用 onSnapshot 常駐訂閱。
 }
 
 // ============================================================
@@ -1022,6 +1111,7 @@ async function copyChoiceBetweenDates(fromKey, toDateStr){
 }
 async function copyChoiceFromPrevWeek(dateStr){
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
+  await ensureMealChoicesLoaded(prevKey); // 同上，避免上週資料剛好超出監聽窗口而複製不到
   await copyChoiceBetweenDates(prevKey, dateStr);
 }
 async function applyLastWeekMealTo(dateStr, meal){
@@ -1029,6 +1119,7 @@ async function applyLastWeekMealTo(dateStr, meal){
   const label = meal==='lunch'?'午餐':'晚餐';
   const list = meal==='lunch'?lunchChoice:dinnerChoice;
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
+  await ensureMealChoicesLoaded(prevKey); // 上週同星期有可能已經超出即時監聽窗口，先按需補讀
   if(!(list[prevKey]&&list[prevKey].length)){ showToast('找不到上週同星期的'+label+'資料'); return; }
   await copyMealBetweenDates(prevKey, dateStr, meal);
   await touchEntry(dateStr);
@@ -1048,6 +1139,10 @@ async function applyPrevDayTo(dateStr, meal){
   // （通常就是昨天，如果昨天沒上課就會抓最近一次有上課的那天），把全班這個餐別的選擇複製過來。
   const label = meal==='lunch'?'午餐':'晚餐';
   const list = meal==='lunch'?lunchChoice:dinnerChoice;
+  // entries（日期清單）本身沒有窗口化，所以先從全部已建立的日期裡找最近的候選日，
+  // 如果那天的餐別資料剛好超出即時監聽窗口，先按需補讀一次再判斷。
+  const candidateDate = Object.keys(entries).filter(k=>k<dateStr).sort((a,b)=>b.localeCompare(a))[0];
+  if(candidateDate) await ensureMealChoicesLoaded(candidateDate);
   const prevKeys = Object.keys(list).filter(k=>k<dateStr).sort((a,b)=>b.localeCompare(a));
   const prevKey = prevKeys[0];
   if(!prevKey){ showToast('找不到更早的'+label+'紀錄可以套用'); return; }
@@ -1416,11 +1511,17 @@ function renderMealTab(){
 function renderStaffDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
   const lC=lunchChoice[date]||[], dC=dinnerChoice[date]||[];
+  // 監聽窗口以外、還沒按需讀取過的舊日期：先別顯示「0 人」這種會誤導的統計，
+  // 提示要展開才能看到正確人數。
+  const notLoaded = date < recentCutoffDate() && !loadedOldMealDates.has(date);
+  const headRight = notLoaded
+    ? `<span class="chip-summary">展開查看人數</span>`
+    : `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
       <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
-      <div class="date-head-right"><span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span></div>
+      <div class="date-head-right">${headRight}</div>
     </div>
     <div class="date-body">
       ${renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lC)}
@@ -1467,11 +1568,15 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
 function renderStudentDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
   const lC=lunchChoice[date]||[], dC=dinnerChoice[date]||[];
+  const notLoaded = date < recentCutoffDate() && !loadedOldMealDates.has(date);
+  const headRight = notLoaded
+    ? `<span class="chip-summary">展開查看</span>`
+    : `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
       <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
-      <div class="date-head-right"><span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span></div>
+      <div class="date-head-right">${headRight}</div>
     </div>
     <div class="date-body">
       ${renderStudentMealCard(date,'lunch','午餐',e.lunch||{},lC)}
@@ -1677,7 +1782,10 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
 
   if(action==='toggle'){
     if(ev.target.closest('.date-delete')||ev.target.closest('.copy-last-btn')) return;
-    if(collapsedDates.has(date)) collapsedDates.delete(date); else collapsedDates.add(date);
+    if(collapsedDates.has(date)){
+      collapsedDates.delete(date);
+      ensureMealChoicesLoaded(date); // 展開的是監聽窗口以外的舊日期時，按需補讀一次
+    } else collapsedDates.add(date);
     render();
   }
   else if(action==='toggle-week'){
@@ -1685,6 +1793,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const ds=Object.keys(entries).filter(d=>weekKey(d)===wk);
     const allCollapsed = ds.every(d=>collapsedDates.has(d));
     ds.forEach(d=>{ if(allCollapsed) collapsedDates.delete(d); else collapsedDates.add(d); });
+    if(allCollapsed) ensureMealChoicesLoadedForWeek(wk); // 展開整週時，按需補讀舊日期
     render();
   }
   else if(action==='cycle-status'){
@@ -1915,6 +2024,11 @@ document.getElementById('gear-btn').addEventListener('click',()=>{
   document.getElementById('set-teacher').checked=settings.includeTeacher;
   renderCoordinatorList();
   document.getElementById('settings-bg').classList.add('show');
+  // 名冊／伙委／外食訂購人改成一次性讀取，打開設定面板時主動重新整理一次，
+  // 確保看到的是最新資料（不然可能是登入當下那一刻的舊快照）。
+  fetchStudentsRoster();
+  fetchStaffList();
+  fetchEventCoordinators();
 });
 
 document.getElementById('bell-btn').addEventListener('click',()=>{
@@ -1957,7 +2071,13 @@ document.getElementById('add-staff-btn').addEventListener('click', async ()=>{
 
 // tabs
 document.getElementById('tab-meal-btn').addEventListener('click',()=>{ activeTab='meal'; document.getElementById('tab-meal-btn').classList.add('active'); document.getElementById('tab-event-btn').classList.remove('active'); render(); });
-document.getElementById('tab-event-btn').addEventListener('click',()=>{ activeTab='event'; document.getElementById('tab-event-btn').classList.add('active'); document.getElementById('tab-meal-btn').classList.remove('active'); render(); });
+document.getElementById('tab-event-btn').addEventListener('click',()=>{
+  activeTab='event'; document.getElementById('tab-event-btn').classList.add('active'); document.getElementById('tab-meal-btn').classList.remove('active'); render();
+  // 菜單／餐廳推薦改成一次性讀取，切到外食訂購頁籤時主動重新整理一次。
+  fetchEventMenu();
+  fetchEventRecommendations();
+  fetchEventCoordinators();
+});
 
 // ============================================================
 // 深色模式切換

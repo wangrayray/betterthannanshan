@@ -90,6 +90,42 @@ collectionGroup 查詢會直接被拒絕。而且因為前端用的是即時監�
 下面「部署安全規則」那步再跑一次 `firebase deploy --only firestore:rules`，
 或去 Firebase Console 手動貼上新版規則，光是更新網頁檔案不會自動套用新規則）。
 
+### 讀取量優化：本機快取、低頻率 collection 改一次性讀取、退餐紀錄窗口化監聽
+
+免費方案（Spark）每天讀取次數有上限，之前 session 每個人登入都會對
+`students`／`staff`／`eventCoordinators`／`menu`／`recommendations`／
+`entries`／`lunch_choice`／`dinner_choice`／`events`／`orders` 全部 10 個
+collection 建立 `onSnapshot` 常駐監聽，只要任何一個人寫入一筆，所有還開著
+頁面的人都會被重新推播、各自再讀一次，讀取量會被「同時在線人數」放大，很容
+易衝高額度。這次做了三項優化（都不需要升級付費方案）：
+
+1. **開啟本機持久化快取**：`initializeFirestore` 改用
+   `persistentLocalCache({ tabManager: persistentMultipleTabManager() })`，
+   同一台裝置重新整理頁面、或開多個分頁時，能直接用本機快取的資料先畫面，
+   不用每次都整包重新從 Firestore 讀。
+2. **低頻率 collection 改一次性讀取**：`students`（座號名冊）、`staff`（伙委
+   名單）、`eventCoordinators`（外食訂購人授權）、`menu`／`recommendations`
+   （外食菜單與推薦）這幾個變動不頻繁的 collection，改成用 `getDocs()` 讀一
+   次就好，不再整個 session 保持 `onSnapshot`。改在使用者實際會用到的時機
+   （伙委點開座號設定齒輪、切到外食訂購頁籤）才主動重新整理一次即可。
+3. **退餐/點餐紀錄改成只監聽近期日期**：`lunch_choice`／`dinner_choice` 這兩
+   個 collectionGroup 監聽加上 `where('date','>=',cutoff)`，只即時同步「最近
+   14 天」（`RECENT_MEAL_DAYS`）的資料，因為早就截止的舊紀錄不會再變動，沒必
+   要一直占用即時監聽的讀取量。使用者展開監聽窗口以外的舊週次卡片時，前端會
+   用 `ensureMealChoicesLoaded()` 按需讀一次那天的資料（讀過會快取在
+   `loadedOldMealDates`，同一個 session 內不會重複讀），畫面上舊卡片收合時
+   也不會顯示誤導的「0 人」，而是提示「展開查看」。
+   這個 `where('date', ...)` 查詢需要 `date` 欄位支援 **collection-group**
+   範圍的索引，Firestore 自動索引預設只索引單一 collection 範圍、不含
+   collection-group，所以要在 Firebase Console 的「Firestore → 索引 → 自動 →
+   新增豁免項目」，針對 `lunch_choice.date` 與 `dinner_choice.date` 各自開啟
+   「集合群組範圍・遞增」（`firestore.indexes.json` 裡的 `fieldOverrides` 也
+   同步補上這兩筆設定，方便之後改用 CLI 部署時對齊）。
+   `entries`（日期清單本身）跟 `events`／`orders`（外食訂購）資料量小，維持
+   原本的即時監聽不變。
+   沒有選擇的方案：升級 Blaze（用量付費）方案——這個能徹底解除額度上限，但
+   會開始按用量收費，這次先用不花錢的三個優化來降低讀取量。
+
 ## 角色權限（Firestore Rules 強制）
 
 - **伙委（staff）**：帳號 email 存在於 `/staff/{email}`，可讀寫所有 collection。
