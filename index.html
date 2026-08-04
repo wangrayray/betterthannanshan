@@ -53,22 +53,20 @@
   .notif-close{display:flex;justify-content:flex-end;margin-top:12px;}
 
   .tutorial-overlay{position:fixed;inset:0;z-index:80;pointer-events:auto;background:rgba(6,16,26,.82);display:none;}
-  .tutorial-stage{position:fixed;top:50%;left:calc((100% - 300px)/2);transform:translate(-50%,-50%);width:min(420px,86vw);max-height:66vh;overflow-y:auto;background:var(--paper);border-radius:14px;padding:16px;box-shadow:0 14px 44px rgba(0,0,0,.4);z-index:81;border:2px dashed var(--line);display:none;}
+  .tutorial-card{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(420px,92vw);max-height:88vh;overflow-y:auto;background:var(--paper);border-radius:14px;padding:20px;box-shadow:0 14px 44px rgba(0,0,0,.4);z-index:81;display:none;flex-direction:column;}
+  .tutorial-card.show{display:flex;}
+  .tutorial-step-count{font-size:11px;color:var(--outside);font-weight:700;margin-bottom:8px;letter-spacing:.04em;text-transform:uppercase;}
+  .tutorial-card h3{margin:0 0 8px;font-family:'Zen Maru Gothic',sans-serif;font-size:17px;color:var(--ink);}
+  .tutorial-card p{font-size:13.5px;line-height:1.7;color:var(--ink-soft);margin:0;}
+  #tutorial-stage:empty{display:none;}
+  #tutorial-stage{margin-bottom:14px;}
   .tutorial-stage-badge{font-size:10.5px;font-weight:700;color:var(--outside);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
-  .tutorial-stage-content{pointer-events:none;}
+  .tutorial-stage-content{pointer-events:none;display:flex;justify-content:center;}
   .tutorial-target{outline:3px solid var(--outside);outline-offset:3px;border-radius:8px;animation:tutorial-pulse 1.4s ease-in-out infinite;}
   @keyframes tutorial-pulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(61,90,254,.5);} 50%{ box-shadow:0 0 0 7px rgba(61,90,254,0);} }
-  .tutorial-sidebar{position:fixed;top:0;right:0;height:100%;width:300px;max-width:86vw;background:var(--paper);z-index:82;box-shadow:-4px 0 24px rgba(20,48,74,.3);padding:22px 20px;display:none;flex-direction:column;overflow-y:auto;}
-  .tutorial-step-count{font-size:11px;color:var(--outside);font-weight:700;margin-bottom:8px;letter-spacing:.04em;text-transform:uppercase;}
-  .tutorial-sidebar h3{margin:0 0 10px;font-family:'Zen Maru Gothic',sans-serif;font-size:18px;color:var(--ink);}
-  .tutorial-sidebar p{font-size:13.5px;line-height:1.75;color:var(--ink-soft);flex:1;margin:0;}
-  .tutorial-nav{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:18px;}
+  .tutorial-nav{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:16px;}
   .tutorial-btn{font-family:inherit;border:none;background:none;color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:12px;padding:0;}
   .tutorial-link-btn{border:none;background:none;color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:12px;padding:0;margin-left:8px;}
-  @media (max-width:700px){
-    .tutorial-sidebar{top:auto;bottom:0;left:0;right:0;width:100%;max-width:100%;height:auto;max-height:44vh;box-shadow:0 -4px 24px rgba(20,48,74,.3);}
-    .tutorial-stage{left:50%;top:16px;transform:translateX(-50%);max-height:42vh;}
-  }
 
   .tab-bar{display:flex;gap:8px;margin-bottom:18px;}
   .tab-btn{flex:1;font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:14px;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);cursor:pointer;}
@@ -370,9 +368,9 @@
 </div>
 
 <div class="tutorial-overlay" id="tutorial-overlay"></div>
-<div class="tutorial-stage" id="tutorial-stage"></div>
-<div class="tutorial-sidebar" id="tutorial-sidebar">
+<div class="tutorial-card" id="tutorial-card">
   <div class="tutorial-step-count" id="tutorial-step-count"></div>
+  <div id="tutorial-stage"></div>
   <h3 id="tutorial-title"></h3>
   <p id="tutorial-desc"></p>
   <div class="tutorial-nav">
@@ -789,30 +787,27 @@ let activeTutorialDoneKey = 'tutorialDone_v1';
 function renderTutorialStep(){
   const step=activeTutorialSteps[tutorialIdx];
   const stageEl=document.getElementById('tutorial-stage');
-  if(step.stageHtml){
-    stageEl.innerHTML = '<div class="tutorial-stage-badge">示範畫面（非真實資料）</div><div class="tutorial-stage-content">'+step.stageHtml+'</div>';
-    stageEl.style.display='block';
-  } else {
-    stageEl.style.display='none';
-  }
+  stageEl.innerHTML = step.stageHtml
+    ? '<div class="tutorial-stage-badge">示範畫面（非真實資料）</div><div class="tutorial-stage-content">'+step.stageHtml+'</div>'
+    : '';
   document.getElementById('tutorial-step-count').textContent = '步驟 '+(tutorialIdx+1)+' / '+activeTutorialSteps.length;
   document.getElementById('tutorial-title').textContent = step.title;
   document.getElementById('tutorial-desc').textContent = step.desc;
   document.getElementById('tutorial-prev').style.visibility = tutorialIdx===0 ? 'hidden' : 'visible';
   document.getElementById('tutorial-next').textContent = tutorialIdx===activeTutorialSteps.length-1 ? '完成' : '下一步';
+  document.getElementById('tutorial-card').scrollTop = 0;
 }
 function startTutorial(steps, doneKey){
   activeTutorialSteps = steps || TUTORIAL_STEPS;
   activeTutorialDoneKey = doneKey || 'tutorialDone_v1';
   tutorialIdx=0;
   document.getElementById('tutorial-overlay').style.display='block';
-  document.getElementById('tutorial-sidebar').style.display='flex';
+  document.getElementById('tutorial-card').classList.add('show');
   renderTutorialStep();
 }
 function endTutorial(){
   document.getElementById('tutorial-overlay').style.display='none';
-  document.getElementById('tutorial-stage').style.display='none';
-  document.getElementById('tutorial-sidebar').style.display='none';
+  document.getElementById('tutorial-card').classList.remove('show');
   try{ localStorage.setItem(activeTutorialDoneKey,'1'); }catch(e){}
 }
 document.getElementById('tutorial-next').addEventListener('click', ()=>{
