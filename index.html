@@ -650,16 +650,25 @@ async function resolveRoleAndBoot(user){
     pendingTutorialForNewStudent = false;
     // 等第一批 Firestore 資料回來、畫面實際渲染出日期卡片之後再開始教學，
     // 這樣「選擇餐點」「確定送出」那幾步才有真正的按鈕可以聚光燈標示。
-    setTimeout(()=>{ startTutorial(); }, 900);
+    setTimeout(()=>{ startTutorial(TUTORIAL_STEPS, 'tutorialDone_v1'); }, 900);
+  }
+  if(role==='staff' && !hasSeenTutorial('staffTutorialDone_v1')){
+    // 伙委的「第一次」判斷不能用註冊時機（註冊完還要等管理員手動加進 staff
+    // collection 才真的能用），所以改成「這台裝置第一次被判定為伙委」就播放。
+    setTimeout(()=>{ startTutorial(STAFF_TUTORIAL_STEPS, 'staffTutorialDone_v1'); }, 900);
   }
 }
 
 // ============================================================
-// 新手教學（只給同學，伙委不需要）：全黑背景 + 聚光燈聚焦在按鈕上，
-// 說明文字放在右側側邊欄。每一步指定要聚焦的按鈕選擇器，如果那個按鈕
-// 現在畫面上還沒出現（例如伙委還沒建立今天的紀錄），就退回顯示替代說明文字，
-// 不會卡住整個教學流程。
+// 新手教學：全黑背景 + 聚光燈聚焦在按鈕上，說明文字放在右側側邊欄。
+// 同學跟伙委各自有一套獨立的步驟（TUTORIAL_STEPS / STAFF_TUTORIAL_STEPS），
+// 引擎共用同一組函式，用 activeTutorialSteps / activeTutorialDoneKey 記錄
+// 目前播放的是哪一套。每一步指定要聚焦的按鈕選擇器，如果那個按鈕現在畫面上
+// 還沒出現（例如還沒有任何外食訂購活動），就退回顯示替代說明文字，不會卡住流程。
 // ============================================================
+function hasSeenTutorial(key){
+  try{ return localStorage.getItem(key)==='1'; }catch(e){ return false; }
+}
 const TUTORIAL_STEPS = [
   { title:'歡迎加入班務系統 👋', desc:'讓我們花 30 秒認識一下這個網頁怎麼用。點「下一步」開始。' },
   { selector:'#tab-bar', tab:'meal', title:'兩個主要頁面', desc:'上面這兩個按鈕可以切換「退餐紀錄」和「外食訂購」兩個頁面。' },
@@ -670,9 +679,35 @@ const TUTORIAL_STEPS = [
     title:'選完要按「確定送出」', desc:'選好之後一定要按這顆「確定送出」，伙委才看得到你的選擇；不按的話只是暫存在你自己的畫面上而已。',
     fallback:'跟上一步一樣，等伙委建立當天的紀錄後，選完餐點右下角會出現「確定送出」按鈕，記得要按下去才算數。' },
   { selector:'#tab-event-btn', tab:'meal', title:'外食訂購', desc:'如果伙委開放合購／外食訂購活動，可以點這裡切換過去，選你要的品項和數量。' },
+  { selector:'.outside-amount', tab:'event',
+    title:'選擇品項與數量', desc:'切到外食訂購頁面後，找到你要的品項，直接在數量欄輸入數字（可以重複訂購多樣），下面會自動幫你算出「我的金額」。',
+    fallback:'目前還沒有進行中的外食訂購活動，或伙委還沒設定菜單。等活動開始、菜單出現後，這裡就會有品項可以輸入數量。' },
+  { selector:'.rec-section [data-action="open-map-modal"]', tab:'event',
+    title:'推薦餐廳', desc:'覺得有想吃的餐廳嗎？點這裡打開地圖搜尋店名、或直接點地圖上的店家來推薦；地圖上找不到的話，下面也可以直接輸入店名推薦。每人限推薦一家，改推薦別家會自動換掉原本那家。',
+    fallback:'等外食訂購活動開始後，活動卡片最下面會出現「📍 開啟地圖選餐廳」，可以用來推薦想吃的餐廳。' },
   { selector:'#who-change-btn', title:'登出／切換帳號', desc:'這裡可以登出，或是切換成別的座號登入（例如借同學的裝置時）。' },
   { title:'教學結束 🎉', desc:'之後如果想再看一次，可以點畫面上方的「📖 新手教學」重新開始。' }
 ];
+const STAFF_TUTORIAL_STEPS = [
+  { title:'伙委外食系統教學 👋', desc:'帶你快速認識外食訂購怎麼管理：新增品項、確認繳費、看總金額、管理餐廳推薦。點「下一步」開始。' },
+  { selector:'#tab-event-btn', tab:'meal', title:'切到外食訂購頁面', desc:'點這裡切換到「外食訂購」頁面，這是管理合購／團購的地方。' },
+  { selector:'#create-event-btn', tab:'event', title:'新增訂購活動', desc:'先幫這次合購取個名字（例如：8/10 雞排店合購），輸入後按這裡建立一個新的外食訂購活動。如果已經有活動了，可以直接往下滑看活動卡片，不用重新建立。' },
+  { selector:'[data-action="add-menu-item"]', tab:'event',
+    title:'新增菜單選項', desc:'在活動卡片裡，輸入品項名稱和金額，按「新增選項」就會把它加進菜單，同學會在自己的畫面看到並選取。',
+    fallback:'先建立一個活動之後，這裡會出現「品項名稱／金額／新增選項」的欄位，可以陸續把菜單加進去。' },
+  { selector:'[data-action="toggle-paid"]', tab:'event',
+    title:'確認繳費狀態', desc:'同學把品項選好之後，收到錢可以點這個打勾，標記這個人已經繳款；勾了之後那一列會變成淺色底標示。',
+    fallback:'等有同學下單之後，每一筆訂購紀錄前面都會出現這個打勾方塊，收到錢的時候記得點一下。' },
+  { selector:'.outside-total', tab:'event',
+    title:'查看總金額統計', desc:'活動卡片下方會即時顯示目前共幾人參加、總金額，還有已繳款／尚未繳款各多少人跟多少錢，不用自己手動加總。',
+    fallback:'等有人下單之後，活動卡片下方就會出現這行統計文字。' },
+  { selector:'.rec-section [data-action="open-map-modal"]', tab:'event',
+    title:'餐廳推薦管理', desc:'同學會在這裡推薦想吃的餐廳，你也可以直接用地圖推薦；如果有重複或不合適的建議，點旁邊的「×」就能刪除。',
+    fallback:'等外食訂購活動開始後，活動卡片最下面會出現餐廳推薦區塊，可以在那裡管理大家的推薦。' },
+  { title:'教學結束 🎉', desc:'之後如果想再看一次，可以點畫面上方的「📖 新手教學」重新開始。' }
+];
+let activeTutorialSteps = TUTORIAL_STEPS;
+let activeTutorialDoneKey = 'tutorialDone_v1';
 function tutorialPositionSpotlight(el){
   const box=document.getElementById('tutorial-spotlight');
   if(!el){ box.style.width='0px'; box.style.height='0px'; return; }
@@ -684,7 +719,7 @@ function tutorialPositionSpotlight(el){
   box.style.height=(r.height+pad*2)+'px';
 }
 function renderTutorialStep(){
-  const step=TUTORIAL_STEPS[tutorialIdx];
+  const step=activeTutorialSteps[tutorialIdx];
   if(step.tab && step.tab!==activeTab){
     activeTab=step.tab;
     document.getElementById('tab-meal-btn').classList.toggle('active', activeTab==='meal');
@@ -702,15 +737,17 @@ function renderTutorialStep(){
   requestAnimationFrame(()=>{
     const el = step.selector ? document.querySelector(step.selector) : null;
     tutorialPositionSpotlight(el);
-    document.getElementById('tutorial-step-count').textContent = '步驟 '+(tutorialIdx+1)+' / '+TUTORIAL_STEPS.length;
+    document.getElementById('tutorial-step-count').textContent = '步驟 '+(tutorialIdx+1)+' / '+activeTutorialSteps.length;
     document.getElementById('tutorial-title').textContent = step.title;
     document.getElementById('tutorial-desc').textContent = (step.selector && !el && step.fallback) ? step.fallback : step.desc;
     document.getElementById('tutorial-prev').style.visibility = tutorialIdx===0 ? 'hidden' : 'visible';
-    document.getElementById('tutorial-next').textContent = tutorialIdx===TUTORIAL_STEPS.length-1 ? '完成' : '下一步';
+    document.getElementById('tutorial-next').textContent = tutorialIdx===activeTutorialSteps.length-1 ? '完成' : '下一步';
     if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
   });
 }
-function startTutorial(){
+function startTutorial(steps, doneKey){
+  activeTutorialSteps = steps || TUTORIAL_STEPS;
+  activeTutorialDoneKey = doneKey || 'tutorialDone_v1';
   tutorialIdx=0;
   document.getElementById('tutorial-overlay').style.display='block';
   document.getElementById('tutorial-sidebar').style.display='flex';
@@ -719,20 +756,22 @@ function startTutorial(){
 function endTutorial(){
   document.getElementById('tutorial-overlay').style.display='none';
   document.getElementById('tutorial-sidebar').style.display='none';
-  try{ localStorage.setItem('tutorialDone_v1','1'); }catch(e){}
+  try{ localStorage.setItem(activeTutorialDoneKey,'1'); }catch(e){}
 }
 document.getElementById('tutorial-next').addEventListener('click', ()=>{
-  if(tutorialIdx>=TUTORIAL_STEPS.length-1){ endTutorial(); return; }
+  if(tutorialIdx>=activeTutorialSteps.length-1){ endTutorial(); return; }
   tutorialIdx++; renderTutorialStep();
 });
 document.getElementById('tutorial-prev').addEventListener('click', ()=>{
   if(tutorialIdx>0){ tutorialIdx--; renderTutorialStep(); }
 });
 document.getElementById('tutorial-skip').addEventListener('click', endTutorial);
-document.getElementById('tutorial-replay-btn').addEventListener('click', startTutorial);
+document.getElementById('tutorial-replay-btn').addEventListener('click', ()=>{
+  startTutorial(role==='staff' ? STAFF_TUTORIAL_STEPS : TUTORIAL_STEPS, role==='staff' ? 'staffTutorialDone_v1' : 'tutorialDone_v1');
+});
 window.addEventListener('resize', ()=>{
   if(document.getElementById('tutorial-overlay').style.display==='block'){
-    const step=TUTORIAL_STEPS[tutorialIdx];
+    const step=activeTutorialSteps[tutorialIdx];
     tutorialPositionSpotlight(step.selector ? document.querySelector(step.selector) : null);
   }
 });
@@ -767,7 +806,7 @@ function applyRoleUI(){
   document.getElementById('who-label').textContent = label;
   document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-block' : 'none';
   document.getElementById('bell-btn').style.display = role==='staff' ? 'inline-block' : 'none';
-  document.getElementById('tutorial-replay-btn').style.display = role==='student' ? 'inline-block' : 'none';
+  document.getElementById('tutorial-replay-btn').style.display = role ? 'inline-block' : 'none';
   document.getElementById('tab-bar').style.display = role ? 'flex' : 'none';
   updateBellBadge();
 }
