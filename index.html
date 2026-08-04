@@ -1390,7 +1390,7 @@ function renderMealTab(){
     dates.forEach(d=>{
       if(!defaultedCollapseDates.has(d)){
         defaultedCollapseDates.add(d);
-        if(weekKey(d)!==curWeekKey) collapsedDates.add(d);
+        if(weekKey(d)<curWeekKey) collapsedDates.add(d);
       }
     });
   }
