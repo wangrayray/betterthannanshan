@@ -67,6 +67,33 @@ service cloud.firestore {
         get(/databases/$(database)/documents/eventCoordinators/$(studentIdOf())).data.expiresAt > request.time;
     }
 
+    // ---------------- 防止時間造假 + 惡意灌爆同一份文件 ----------------
+    // 這兩個函式只用在「同學可以自己直接寫入」的高風險 collection
+    // （lunch_choice／dinner_choice／orders）：這些文件的擁有者就是同學本人，
+    // 一般的「只能寫自己座號」規則擋不住「本人用腳本狂洗自己那份紀錄」。
+    //
+    // hasFreshTimestamp()：強制 updatedAt 一定要是 request.time（伺服器當下
+    // 時間），前端一律用 serverTimestamp() 送出。這樣就算有人打開 F12、複製
+    // firebaseConfig、自己寫腳本呼叫 SDK 送資料，也沒辦法偽造成別的時間，
+    // 也沒辦法乾脆不帶這個欄位（因為規則會直接拒絕）。
+    //
+    // isThrottled()：同一份文件距離上次更新如果還沒超過 1 秒，就拒絕這次寫入
+    // （create 沒有「上一次」可比較，所以不受此限，只限制 update／delete）。
+    // 這樣即使有人寫一支 while(true) 迴圈狂打同一位同學的紀錄，實際上一秒
+    // 內最多只有 1 次會真的寫進去、算進計費用量，其餘全部在規則層被拒絕、
+    // 不會產生額外的計費讀寫，避免把 Firebase 免費額度刷爆。
+    // 舊資料（這幾條規則上線之前寫入的文件）updatedAt 還是字串、不是
+    // Timestamp，get() 出來 `last is timestamp` 會是 false，此時視為「沒有
+    // 節流資訊可比對」直接放行；一旦被寫入一次就會換成正確的 Timestamp，
+    // 之後就會正常受到節流限制，不需要手動搬移舊資料。
+    function hasFreshTimestamp() {
+      return request.resource.data.updatedAt == request.time;
+    }
+    function isThrottled(existingData) {
+      let last = existingData.get('updatedAt', null);
+      return last is timestamp && request.time < last + duration.value(1, 's');
+    }
+
     // ---------------- settings ----------------
     match /settings/{docId} {
       allow read: if isSignedIn();
@@ -119,12 +146,16 @@ service cloud.firestore {
     // 原因，因此以下規則一律寫在最外層，不要巢狀寫在其他 match 裡面。
     match /{path=**}/lunch_choice/{sid} {
       allow read: if isSignedIn();
-      allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
+      allow create: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp();
+      allow update: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp() && !isThrottled(resource.data);
+      allow delete: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && !isThrottled(resource.data);
     }
 
     match /{path=**}/dinner_choice/{sid} {
       allow read: if isSignedIn();
-      allow write: if isStaff() || (isOwnId(sid) && isRosterStudent());
+      allow create: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp();
+      allow update: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp() && !isThrottled(resource.data);
+      allow delete: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && !isThrottled(resource.data);
     }
 
     match /{path=**}/menu/{itemId} {
@@ -134,7 +165,9 @@ service cloud.firestore {
 
     match /{path=**}/orders/{sid} {
       allow read: if isSignedIn();
-      allow write: if isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent());
+      allow create: if (isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp();
+      allow update: if (isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp() && !isThrottled(resource.data);
+      allow delete: if (isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent())) && !isThrottled(resource.data);
     }
 
     // 餐廳推薦：任何在名冊上的同學、伙委、外食訂購人都可以推薦/+1（累加次數），

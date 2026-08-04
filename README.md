@@ -60,6 +60,36 @@ collectionGroup 查詢會直接被拒絕。而且因為前端用的是即時監�
 已實際測試過即時更新。日後如果要新增其他用 collectionGroup 讀取的子集合，
 記得比照辦理、規則要寫在最外層。
 
+### 安全性強化：伺服器時間戳記 + 同一份文件的寫入節流
+
+`lunch_choice`／`dinner_choice`／`orders` 這三個 collection 因為同學可以直接
+寫自己那一份，如果有人打開瀏覽器 F12、複製 `firebaseConfig`，自己寫一支腳本
+用 Firebase SDK 狂洗自己座號那份紀錄（例如 1 秒內送出上萬次「退餐/不退餐」），
+安全規則原本只檢查「是不是自己的座號」，擋不住這種本人對自己資料的濫用，
+可能在短時間內產生大量計費讀寫、刷爆 Firebase 免費額度，害全班當天都不能
+點餐。目前已補上兩層防護：
+
+1. **一律用 `serverTimestamp()`**：前端送出 `updatedAt` 時不再用瀏覽器本機的
+   `new Date().toISOString()`（可以被偽造），改用 Firestore 提供的
+   `serverTimestamp()`，寫入時由伺服器決定真正的時間，並在 `firestore.rules`
+   強制 `request.resource.data.updatedAt == request.time`，偽造時間或乾脆不
+   帶這個欄位都會直接被拒絕。
+2. **同一份文件節流**：`firestore.rules` 裡新增 `isThrottled()`，同一份文件
+   距離上次更新不到 1 秒就拒絕這次寫入（`create` 沒有「上一次」可比較，不受
+   此限，只限制 `update`／`delete`）。這樣即使有人狂打同一位同學的紀錄，一秒
+   內最多只有 1 次真的寫進去、算進計費用量，其餘全部在規則層被拒絕、不花錢
+   也不影響額度。這個規則只設計給 `lunch_choice`／`dinner_choice`／`orders`
+   （同學能直接自己寫的高風險 collection），其他 collection（`entries`／
+   `events`／`settings`／`students`／`staff`／`eventCoordinators`）本來就只有
+   伙委或外食訂購人能寫，不在這次調整範圍內。
+   舊資料（這次規則上線前寫入的文件）`updatedAt` 還是字串，規則裡有做相容判斷
+   （`is timestamp` 為 false 時視為沒有節流資訊、直接放行），不用手動搬移。
+
+**這次改動除了換一版 `index.html`，`firestore.rules` 也有改，兩個都要重新
+部署**（`index.html` 推上 GitHub Pages 會自動生效，但 `firestore.rules` 要照
+下面「部署安全規則」那步再跑一次 `firebase deploy --only firestore:rules`，
+或去 Firebase Console 手動貼上新版規則，光是更新網頁檔案不會自動套用新規則）。
+
 ## 角色權限（Firestore Rules 強制）
 
 - **伙委（staff）**：帳號 email 存在於 `/staff/{email}`，可讀寫所有 collection。

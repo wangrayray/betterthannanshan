@@ -425,7 +425,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
-  collection, collectionGroup, getDocs, onSnapshot, writeBatch, runTransaction, Timestamp
+  collection, collectionGroup, getDocs, onSnapshot, writeBatch, runTransaction, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // 你的 Firebase 專案設定（已依你提供的內容填入）
@@ -459,6 +459,17 @@ const WD = ['日','一','二','三','四','五','六'];
 const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐'};
 const MEAL_LABEL = {lunch:'午餐', dinner:'晚餐'};
 const NOTIF_SEEN_KEY = 'cancelNotifLastSeen';
+// updatedAt 欄位現在改用 Firestore serverTimestamp()（安全性：防止有人直接用
+// SDK 偽造送出時間，見下方 firestore.rules 的 request.time 檢查），讀出來的
+// 型別會是 Firestore Timestamp 物件（有 .toMillis()），不是字串。舊資料（規則
+// 上線前寫入的）updatedAt 還是 ISO 字串；剛送出、伺服器還沒回應前的本機暫存
+// 版本則會是 null。這個小函式把三種情況都轉成統一的毫秒數，方便排序/比較。
+function tsMillis(v){
+  if(!v) return 0;
+  if(typeof v.toMillis === 'function') return v.toMillis();
+  if(typeof v === 'string'){ const t=new Date(v).getTime(); return isNaN(t)?0:t; }
+  return 0;
+}
 // ============================================================
 // 伙委端「退餐通知」——只列出退餐（不列訂餐/葷素），從既有的
 // lunchChoice/dinnerChoice 本機狀態直接算出來，不需要新的 Firestore 資料結構。
@@ -476,27 +487,27 @@ function computeCancelNotifications(){
             key: date+'|'+meal+'|'+c.id,
             date, meal,
             label: c.seatNo || c.name || c.id,
-            updatedAt: c.updatedAt || ''
+            updatedAtMs: tsMillis(c.updatedAt)
           });
         }
       });
     });
   });
-  list.sort((a,b)=> (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  list.sort((a,b)=> b.updatedAtMs - a.updatedAtMs);
   return list;
 }
 function getNotifLastSeen(){
-  try{ return localStorage.getItem(NOTIF_SEEN_KEY) || ''; }catch(e){ return ''; }
+  try{ return Number(localStorage.getItem(NOTIF_SEEN_KEY)) || 0; }catch(e){ return 0; }
 }
-function setNotifLastSeen(ts){
-  try{ localStorage.setItem(NOTIF_SEEN_KEY, ts); }catch(e){}
+function setNotifLastSeen(ms){
+  try{ localStorage.setItem(NOTIF_SEEN_KEY, String(ms)); }catch(e){}
 }
 function updateBellBadge(){
   const badge=document.getElementById('bell-badge');
   if(!badge) return;
   if(role!=='staff'){ badge.classList.remove('show'); return; }
   const lastSeen=getNotifLastSeen();
-  const unread=computeCancelNotifications().filter(n=>n.updatedAt > lastSeen).length;
+  const unread=computeCancelNotifications().filter(n=>n.updatedAtMs > lastSeen).length;
   badge.textContent = unread>99 ? '99+' : String(unread);
   badge.classList.toggle('show', unread>0);
 }
@@ -509,13 +520,12 @@ function renderNotifPanel(){
         <div class="notif-row">
           <div class="notif-info">
             <span class="notif-main">${escapeHtml(n.date)}・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} 退餐</span>
-            <span class="notif-time">${n.updatedAt ? new Date(n.updatedAt).toLocaleString('zh-TW') : ''}</span>
+            <span class="notif-time">${n.updatedAtMs ? new Date(n.updatedAtMs).toLocaleString('zh-TW') : ''}</span>
           </div>
         </div>`).join('')}
     </div>` : `<div class="empty-state">目前沒有任何退餐紀錄</div>`;
   // 標記為已讀：用目前列表中最新的一筆時間當作「已看過」的分界點
-  if(list.length){ setNotifLastSeen(list[0].updatedAt || new Date().toISOString()); }
-  else{ setNotifLastSeen(new Date().toISOString()); }
+  setNotifLastSeen(list.length ? list[0].updatedAtMs : Date.now());
   updateBellBadge();
 }
 let entries = {};      // date -> {date,lunch:{},dinner:{},lastEditBy,lastEditAt}
@@ -1003,10 +1013,10 @@ async function addDate(dateStr, opts){
 async function copyChoiceBetweenDates(fromKey, toDateStr){
   const batch=writeBatch(db);
   (lunchChoice[fromKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',toDateStr,'lunch_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
+    batch.set(doc(db,'entries',toDateStr,'lunch_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:serverTimestamp()});
   });
   (dinnerChoice[fromKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',toDateStr,'dinner_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
+    batch.set(doc(db,'entries',toDateStr,'dinner_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:serverTimestamp()});
   });
   await batch.commit();
 }
@@ -1029,7 +1039,7 @@ async function copyMealBetweenDates(fromKey, toDateStr, meal){
   const list = meal==='lunch'?lunchChoice:dinnerChoice;
   const batch=writeBatch(db);
   (list[fromKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',toDateStr,collName,o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:new Date().toISOString()});
+    batch.set(doc(db,'entries',toDateStr,collName,o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:serverTimestamp()});
   });
   await batch.commit();
 }
@@ -1130,7 +1140,7 @@ async function removeMenuItem(eventId, itemId){
   const batch=writeBatch(db);
   orders.forEach(o=>{
     if(o.items && o.items[itemId]!==undefined){
-      batch.update(doc(db,'events',eventId,'orders',o.id), {['items.'+itemId]: deleteField()});
+      batch.update(doc(db,'events',eventId,'orders',o.id), {['items.'+itemId]: deleteField(), updatedAt:serverTimestamp()});
     }
   });
   await batch.commit();
@@ -1151,7 +1161,7 @@ async function setItemQty(eventId, label, itemId, val){
     studentId: existing ? (existing.studentId||label) : label,
     name: existing ? (existing.name||label) : label,
     paid: existing ? !!existing.paid : false,
-    items, eventId, updatedBy:identity(), updatedAt:new Date().toISOString()
+    items, eventId, updatedBy:identity(), updatedAt:serverTimestamp()
   }, {merge:true});
 }
 async function removeParticipant(eventId, orderId){
@@ -1159,7 +1169,7 @@ async function removeParticipant(eventId, orderId){
 }
 async function addEventCustomName(eventId, name){
   const id='other__'+uid();
-  await setDoc(doc(db,'events',eventId,'orders',id), {studentId:name, name, items:{}, eventId, updatedBy:identity(), updatedAt:new Date().toISOString()});
+  await setDoc(doc(db,'events',eventId,'orders',id), {studentId:name, name, items:{}, eventId, updatedBy:identity(), updatedAt:serverTimestamp()});
 }
 async function deleteEvent(id){
   const ok=await showConfirm('「'+events[id].title+'」要刪除嗎？此動作無法復原。');
@@ -1698,7 +1708,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
       else{
         tx.set(ref, {
           seatNo:label, studentId:label, name: existing?(existing.name||label):label, status:next,
-          note: existing?(existing.note||''):'', date, updatedBy:identity(), updatedAt:new Date().toISOString()
+          note: existing?(existing.note||''):'', date, updatedBy:identity(), updatedAt:serverTimestamp()
         }, {merge:true});
       }
     });
@@ -1732,7 +1742,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     } else {
       await setDoc(ref, {
         seatNo:studentId, studentId, name:studentId, status,
-        date, updatedBy:identity(), updatedAt:new Date().toISOString()
+        date, updatedBy:identity(), updatedAt:serverTimestamp()
       }, {merge:true});
       showToast('已送出：'+(STATUS_LABEL[status]||''));
     }
@@ -1748,7 +1758,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const name=input.value.trim(); if(!name) return;
     const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const id='other__'+uid();
-    await setDoc(doc(db,'entries',date,collName,id), {seatNo:id, studentId:id, name, status:'unset', note:'', date, updatedBy:identity(), updatedAt:new Date().toISOString()});
+    await setDoc(doc(db,'entries',date,collName,id), {seatNo:id, studentId:id, name, status:'unset', note:'', date, updatedBy:identity(), updatedAt:serverTimestamp()});
     await touchEntry(date);
     input.value='';
   }
@@ -1759,7 +1769,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   }
   else if(action==='clear-note'){
     const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
-    await updateDoc(doc(db,'entries',date,collName,el.dataset.id), {note:'', updatedBy:identity(), updatedAt:new Date().toISOString()});
+    await updateDoc(doc(db,'entries',date,collName,el.dataset.id), {note:'', updatedBy:identity(), updatedAt:serverTimestamp()});
   }
   else if(action==='delete-event'){ ev.stopPropagation(); await deleteEvent(eventId); }
   else if(action==='add-menu-item'){
@@ -1811,7 +1821,7 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
     if(!name) return;
     const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const id='other__'+uid();
-    await setDoc(doc(db,'entries',date,collName,id), {seatNo:id, studentId:id, name, status:'unset', note:'', date, updatedBy:identity(), updatedAt:new Date().toISOString()});
+    await setDoc(doc(db,'entries',date,collName,id), {seatNo:id, studentId:id, name, status:'unset', note:'', date, updatedBy:identity(), updatedAt:serverTimestamp()});
     await touchEntry(date);
     ev.target.value='';
   }
@@ -1840,7 +1850,7 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
   }
   else if(ev.target.dataset.action==='toggle-paid'){
     await updateDoc(doc(db,'events',ev.target.dataset.event,'orders',ev.target.dataset.id), {
-      paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString()
+      paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString(), updatedAt:serverTimestamp()
     });
   }
   }catch(err){
