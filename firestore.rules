@@ -223,12 +223,18 @@ service cloud.firestore {
       allow delete: if (isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent())) && !isThrottled(resource.data);
     }
 
-    // 餐廳推薦：任何在名冊上的同學、伙委、外食訂購人都可以推薦/+1（累加次數），
-    // 但只有伙委／外食訂購人可以刪除（清掉重複或不合適的建議）。
+    // 餐廳推薦：任何在名冊上的同學、伙委、外食訂購人都可以推薦/+1（累加次數）。
+    // 刪除分兩種情況：伙委／外食訂購人可以直接刪除任何一筆（不管幾票，用來清掉
+    // 重複或不合適的建議）；一般同學則只能刪除「voters 裡只有自己這一票」的
+    // 那一筆——也就是自己推薦、目前還沒有其他人跟投的那家，用來支援「移除我
+    // 自己的推薦」。如果同一筆已經有其他人也投了，同學不能整筆刪除，前端會改
+    // 用 update 拿掉自己那個 voter key（isRosterStudent() 的 update 權限本來就
+    // 涵蓋這種情況）。
     match /{path=**}/recommendations/{recId} {
       allow read: if isSignedIn();
       allow create, update: if isStaff() || isEventCoordinator() || isRosterStudent();
-      allow delete: if isStaff() || isEventCoordinator();
+      allow delete: if isStaff() || isEventCoordinator()
+        || (isRosterStudent() && resource.data.get('voters', {}).keys().hasOnly(['student_' + studentIdOf()]));
     }
 
     // 預設拒絕所有其他路徑

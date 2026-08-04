@@ -300,7 +300,7 @@
       <rect x="30" y="21" width="10" height="12" rx="3" fill="#14304A"/>
       <path d="M4 14 L24 4 L44 14" stroke="#14304A" stroke-width="2" fill="none" stroke-linejoin="round"/>
     </svg>
-    <div><h1>比南山更好</h1><p>退餐紀錄・外食訂購（懷疑是思想的泉源。）(我思故我在。)(❓)</p></div>
+    <div><h1>比南山更好</h1><p>退餐紀錄・外食訂購（比南山成為更好的南山）</p></div>
     <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="切換深色／淺色模式" aria-label="切換深色／淺色模式">🌙</button>
   </div>
 
@@ -814,7 +814,7 @@ const TUTORIAL_STEPS = [
         <div class="outside-total">我的金額：NT$60</div>
       </div>
     </div>` },
-  { title:'推薦餐廳', desc:'覺得有想吃的餐廳嗎？點這裡打開地圖搜尋店名、或直接點地圖上的店家來推薦；地圖上找不到的話，下面也可以直接輸入店名推薦。每人限推薦一家，改推薦別家會自動換掉原本那家。',
+  { title:'推薦餐廳', desc:'覺得有想吃的餐廳嗎？點這裡打開地圖搜尋店名、或直接點地圖上的店家來推薦；地圖上找不到的話，下面也可以直接輸入店名推薦。每人最多可以推薦兩家，自己推薦的可以隨時按「移除我的推薦」取消；伙委／外食訂購人則可以移除任何人的推薦。',
     stageHtml:`<div class="rec-section" style="border-top:none;padding-top:0;max-width:300px;">
       <div class="section-label">🍽️ 餐廳推薦（示範）</div>
       <div class="rec-search-row"><button type="button" class="btn btn-outside tutorial-target">📍 開啟地圖選餐廳</button></div>
@@ -1042,7 +1042,7 @@ function subscribeAll(){
 
   // 餐廳推薦改回即時監聽：先前為了省讀取量改成一次性讀取，但本機資料容易
   // 過期，導致「每人限推薦一家、改推薦會自動換票」的判斷（見下方
-  // myCurrentRecommendation()）失準——如果自己剛投完票、本機資料還沒更新
+  // myCurrentRecommendations()）失準——如果自己剛投完票、本機資料還沒更新
   // 就又推薦別家，會誤判成「還沒投過票」而沒有把舊票移除，變成同時投兩家。
   // 這個 collection 的資料量遠小於 entries（每個活動頂多幾十家候選餐廳），
   // 用即時監聽換取正確性是划算的取捨。
@@ -1369,15 +1369,21 @@ async function openMapModal(eventId){
     showToast('地圖載入失敗：'+(err.message||'請確認網路連線'));
   }
 }
-// 每個人（伙委用 email、同學用座號）在同一個活動裡「限推薦一家餐廳」，
+// 每個人（伙委用 email、同學用座號）在同一個活動裡「最多可以推薦兩家餐廳」，
 // 用 voters 這個 map 記錄「誰投過」，票數用 voters 的筆數計算。
-// 如果改推薦別家，會自動把原本那家的票拿掉、換到新的一家，不是每家都能各投一次。
+// 自己推薦的隨時可以按「移除我的推薦」取消（只拿掉自己那一票，如果還有別人
+// 也投這家，這家餐廳本身不會被刪掉）；伙委／外食訂購人則可以直接移除任何人
+// 推薦的整筆資料（不管有幾票）。
+const MAX_RECOMMENDATIONS_PER_PERSON = 2;
 function myVoterKey(){
   return role==='staff' ? ('staff_'+simpleHash(myEmail||'')) : ('student_'+(studentId||''));
 }
-function myCurrentRecommendation(eventId){
+function myCurrentRecommendations(eventId){
   const voterKey=myVoterKey();
-  return (eventRecommendations[eventId]||[]).find(r=>r.voters && r.voters[voterKey]) || null;
+  return (eventRecommendations[eventId]||[]).filter(r=>r.voters && r.voters[voterKey]);
+}
+function isMyVote(r){
+  return !!(r.voters && r.voters[myVoterKey()]);
 }
 async function removeMyVoteFrom(eventId, rec, voterKey){
   const remaining = Object.keys(rec.voters||{}).filter(k=>k!==voterKey);
@@ -1392,13 +1398,14 @@ async function recommendRestaurant(eventId, name, address, lat, lon){
   if(!name){ showToast('請輸入或選擇餐廳名稱'); return; }
   const recId = 'r'+simpleHash(name.toLowerCase()+'|'+address.toLowerCase());
   const voterKey = myVoterKey();
-  const current = myCurrentRecommendation(eventId);
-  if(current && current.id===recId){
+  const mine = myCurrentRecommendations(eventId);
+  if(mine.some(r=>r.id===recId)){
     showToast('你已經推薦過「'+name+'」了');
     return;
   }
-  if(current){
-    await removeMyVoteFrom(eventId, current, voterKey);
+  if(mine.length >= MAX_RECOMMENDATIONS_PER_PERSON){
+    showToast('每人最多只能推薦 '+MAX_RECOMMENDATIONS_PER_PERSON+' 家餐廳，請先移除一家再推薦新的');
+    return;
   }
   await setDoc(doc(db,'events',eventId,'recommendations',recId), {
     name, address, lat: (lat===undefined||lat===null||isNaN(lat))?null:lat, lon:(lon===undefined||lon===null||isNaN(lon))?null:lon,
@@ -1406,7 +1413,7 @@ async function recommendRestaurant(eventId, name, address, lat, lon){
     voters: { [voterKey]: { by: identity(), at: new Date().toISOString() } },
     lastRecommendedBy: identity(), lastRecommendedAt: new Date().toISOString()
   }, {merge:true});
-  showToast(current ? '已改為推薦「'+name+'」' : '已推薦「'+name+'」');
+  showToast('已推薦「'+name+'」');
 }
 async function removeRecommendation(eventId, recId){
   await deleteDoc(doc(db,'events',eventId,'recommendations',recId));
@@ -1631,14 +1638,15 @@ function renderRecommendSection(eventId, canDelete){
           <div class="rec-actions">
             ${(r.lat&&r.lon)?`<a class="rec-map-link" href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lon}" target="_blank" rel="noopener">🗺️ 地圖</a>`:''}
             <button type="button" class="rec-vote-btn" data-action="vote-recommend" data-event="${eventId}" data-id="${r.id}">👍 +1</button>
-            ${canDelete?`<button type="button" class="outside-remove" data-action="remove-recommend" data-event="${eventId}" data-id="${r.id}">×</button>`:''}
+            ${isMyVote(r)?`<button type="button" class="outside-remove" data-action="remove-my-recommend" data-event="${eventId}" data-id="${r.id}" title="只移除我自己的推薦">移除我的</button>`:''}
+            ${canDelete?`<button type="button" class="outside-remove" data-action="remove-recommend" data-event="${eventId}" data-id="${r.id}" title="移除這筆推薦（不論幾票）">×</button>`:''}
           </div>
         </div>`).join('')}
     </div>` : `<div class="other-label">目前還沒有人推薦餐廳</div>`;
 
   return `
   <div class="rec-section">
-    <div class="section-label">🍽️ 餐廳推薦（用 Google 地圖選餐廳，推薦後同名同地址會自動累計次數，每人限推薦一家，改推薦別家會自動換掉原本那家）</div>
+    <div class="section-label">🍽️ 餐廳推薦（用 Google 地圖選餐廳，推薦後同名同地址會自動累計次數，每人最多推薦兩家；自己推薦的可以按「移除我的」取消，伙委／外食訂購人可以移除任何人的推薦）</div>
     <div class="rec-search-row">
       <button type="button" class="btn btn-outside" data-action="open-map-modal" data-event="${eventId}">📍 開啟地圖選餐廳</button>
     </div>
@@ -1912,6 +1920,11 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const r=(eventRecommendations[eventId]||[]).find(x=>x.id===el.dataset.id);
     if(!r) return;
     await recommendRestaurant(eventId, r.name, r.address, r.lat, r.lon);
+  }
+  else if(action==='remove-my-recommend'){
+    const r=(eventRecommendations[eventId]||[]).find(x=>x.id===el.dataset.id);
+    if(!r) return;
+    await removeMyVoteFrom(eventId, r, myVoterKey());
   }
   else if(action==='remove-recommend'){
     await removeRecommendation(eventId, el.dataset.id);
