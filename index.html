@@ -305,7 +305,7 @@
       <rect x="30" y="21" width="10" height="12" rx="3" fill="#14304A"/>
       <path d="M4 14 L24 4 L44 14" stroke="#14304A" stroke-width="2" fill="none" stroke-linejoin="round"/>
     </svg>
-    <div><h1>比南山更好</h1><p>退餐紀錄・外食訂購（比南山成為更好的南山）</p></div>
+    <div><h1>比南山更好</h1><p>退餐紀錄・外食訂購（思考是懷疑的泉源。)(我思故我在。)(❓)</p></div>
     <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="切換深色／淺色模式" aria-label="切換深色／淺色模式">🌙</button>
   </div>
 
@@ -1643,7 +1643,7 @@ function renderRecommendSection(eventId, canDelete){
           <div class="rec-actions">
             ${(r.lat&&r.lon)?`<a class="rec-map-link" href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lon}" target="_blank" rel="noopener">🗺️ 地圖</a>`:''}
             <button type="button" class="rec-vote-btn" data-action="vote-recommend" data-event="${eventId}" data-id="${r.id}">👍 +1</button>
-            ${isMyVote(r)?`<button type="button" class="outside-remove" data-action="remove-my-recommend" data-event="${eventId}" data-id="${r.id}" title="只移除我自己的推薦">移除我的</button>`:''}
+            ${isMyVote(r)?`<button type="button" class="outside-remove" data-action="remove-my-recommend" data-event="${eventId}" data-id="${r.id}" title="只移除我自己的推薦">移除</button>`:''}
             ${canDelete?`<button type="button" class="outside-remove" data-action="remove-recommend" data-event="${eventId}" data-id="${r.id}" title="移除這筆推薦（不論幾票）">×</button>`:''}
           </div>
         </div>`).join('')}
