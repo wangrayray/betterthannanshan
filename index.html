@@ -172,6 +172,10 @@
   .meal-card.dinner .number-cell.meat{background:var(--dinner);color:#fff;}
   .number-cell.veg{background:var(--mine);color:#fff;}
   .number-cell.cancel{background:var(--paper);color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
+  .number-cell.pending{outline:2px dashed var(--outside);outline-offset:1px;}
+  .pending-bar{margin:0 0 10px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--outside-bg);border:1px dashed var(--outside);border-radius:10px;font-size:12.5px;color:var(--outside);}
+  .pending-bar b{font-size:13px;}
+  .pending-bar .btn{padding:5px 12px;font-size:12px;}
   .meal-summary{font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.7;}
   .meal-summary b{color:var(--ink);}
   .same-as-btn{display:block;width:100%;font-family:inherit;border:1px dashed var(--outside);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;background:var(--outside-bg);color:var(--outside);cursor:pointer;margin-bottom:8px;text-align:center;}
@@ -359,6 +363,11 @@
       </div>
       <div class="chips" id="coordinator-list" style="margin-top:8px;"></div>
     </div>
+    <div class="row">
+      <label>資料搬移（一次性工具）</label>
+      <div class="sub" style="margin:0 0 8px;">把舊版「一人一份子文件」的點餐紀錄（lunch_choice/dinner_choice）搬進新版合併欄位（entries 文件的 lunch.choices/dinner.choices）。只需要按一次，重複按也不會蓋掉已經搬移過的資料，可以放心多按幾次直到看到「搬移完成」。</div>
+      <button class="btn btn-ghost" id="migrate-choices-btn" type="button">搬移舊點餐資料</button>
+    </div>
     <div class="actions"><button class="btn btn-ghost" id="settings-cancel">取消</button><button class="btn btn-primary" id="settings-save">儲存</button></div>
   </div>
 </div>
@@ -425,8 +434,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField,
-  collection, collectionGroup, getDocs, onSnapshot, writeBatch, runTransaction, serverTimestamp, Timestamp,
-  query, where, orderBy,
+  collection, collectionGroup, getDocs, onSnapshot, writeBatch, serverTimestamp, Timestamp,
   persistentLocalCache, persistentMultipleTabManager
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
@@ -482,17 +490,30 @@ function tsMillis(v){
   return 0;
 }
 // ============================================================
-// 伙委端「退餐通知」——只列出退餐（不列訂餐/葷素），從既有的
-// lunchChoice/dinnerChoice 本機狀態直接算出來，不需要新的 Firestore 資料結構。
+// 讀取量優化：全班的點餐/退餐狀態不再是「entries/{date}/lunch_choice/{座號}」
+// 一人一份子文件，改成合併存在 entries/{date} 這一份文件裡的
+// lunch.choices.{座號} / dinner.choices.{座號} 這兩個 map 欄位。
+// choiceMap()／choiceArr() 是統一的存取入口，其餘程式碼都透過這兩個函式讀取
+// 點餐資料，不直接碰 entries[date].lunch.choices 的巢狀結構。
+// ============================================================
+function choiceMap(date, meal){
+  return (entries[date] && entries[date][meal] && entries[date][meal].choices) || {};
+}
+function choiceArr(date, meal){
+  const m = choiceMap(date, meal);
+  return Object.keys(m).map(id=>Object.assign({id}, m[id]));
+}
+// ============================================================
+// 伙委端「退餐通知」——只列出退餐（不列訂餐/葷素），從 entries 裡的
+// lunch.choices/dinner.choices 直接算出來，不需要新的 Firestore 資料結構。
 // 「已讀」用瀏覽器 localStorage 記錄最後查看時間（每台裝置各自記錄），
 // 打開通知視窗時，會把當下看到的這幾筆都標記為已讀。
 // ============================================================
 function computeCancelNotifications(){
   const list=[];
-  ['lunch','dinner'].forEach(meal=>{
-    const src = meal==='lunch' ? lunchChoice : dinnerChoice;
-    Object.keys(src).forEach(date=>{
-      (src[date]||[]).forEach(c=>{
+  Object.keys(entries).forEach(date=>{
+    ['lunch','dinner'].forEach(meal=>{
+      choiceArr(date, meal).forEach(c=>{
         if(c.status==='cancel'){
           list.push({
             key: date+'|'+meal+'|'+c.id,
@@ -539,9 +560,7 @@ function renderNotifPanel(){
   setNotifLastSeen(list.length ? list[0].updatedAtMs : Date.now());
   updateBellBadge();
 }
-let entries = {};      // date -> {date,lunch:{},dinner:{},lastEditBy,lastEditAt}
-let lunchChoice = {};   // date -> [{id,seatNo,name,status:'meat'|'veg'|'cancel',note,updatedBy,updatedAt}]
-let dinnerChoice = {};  // date -> [...]
+let entries = {};      // date -> {date,lunch:{choices:{}},dinner:{choices:{}},lastEditBy,lastEditAt,note}
 let events = {};        // id -> {id,title,createdAt,createdBy,lastEditBy,lastEditAt}
 let eventMenu = {};     // eventId -> [{id,name,price}]
 let eventOrders = {};   // eventId -> [{id,studentId,name,items,updatedAt}]
@@ -560,7 +579,11 @@ let draftChoice = {};    // "date|meal" -> {status,note}  同學按選項時的�
 
 let collapsedDates = new Set();
 let defaultedCollapseDates = new Set();
-let loadedOldMealDates = new Set(); // 已經按需補讀過（超出即時監聽時間窗）的日期
+// 伙委端「批次送出」本機暫存：key 是 date+'|'+meal+'|'+label，value 是
+// {date,meal,label,baseline,next,name,note}。baseline 記錄「開始編輯當下」看到
+// 的狀態，送出時如果 baseline 跟 Firestore 目前最新值不一致（代表送出前被別
+// 人改過），就跳過那一筆、提示衝突，不會覆蓋掉別人剛送出的資料。
+let staffDraft = {};
 let role = '';          // 'staff' | 'student' | ''
 let staffName = '';
 let studentId = '';
@@ -571,16 +594,6 @@ let unsubs = [];
 let tutorialIdx = 0;
 
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-// 讀取量優化：lunch_choice／dinner_choice 只用即時監聽「最近 RECENT_MEAL_DAYS 天」
-// 的資料，太舊的資料不需要即時同步（早就截止、不會再變動），展開更舊的週次時
-// 才按需讀一次（見 ensureMealChoicesLoaded）。這樣同時在線的人數不會讓每一筆
-// 舊資料的讀取量被重複放大。
-const RECENT_MEAL_DAYS = 14;
-function recentCutoffDate(){
-  const d = new Date();
-  d.setDate(d.getDate() - RECENT_MEAL_DAYS);
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-}
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function normalizeSeatNo(v){
   v = String(v||'').trim();
@@ -901,13 +914,12 @@ function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); un
 
 function teardownState(){
   teardownListeners();
-  entries={}; lunchChoice={}; dinnerChoice={}; events={}; eventMenu={}; eventOrders={};
+  entries={}; events={}; eventMenu={}; eventOrders={};
   eventRecommendations={};
-  studentsRoster={}; staffList={}; eventCoordinators={}; draftChoice={};
+  studentsRoster={}; staffList={}; eventCoordinators={}; draftChoice={}; staffDraft={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
   defaultedCollapseDates=new Set();
-  loadedOldMealDates=new Set();
 }
 
 onAuthStateChanged(auth, async (user)=>{
@@ -997,32 +1009,6 @@ async function fetchEventRecommendations(){
 // 座號設定面板打開、或切到外食訂購頁籤時，各自呼叫對應的 refresh 函式重新整
 // 理一次即可（見下面 gear-btn / tab-event-btn 的事件監聽）。
 
-// 展開「監聽窗口以外」（超過 RECENT_MEAL_DAYS 天）的舊日期時，按需讀一次該
-// 日期的 lunch_choice／dinner_choice，讀完就快取起來（loadedOldMealDates），
-// 之後同一個 session 內再次展開就不會重複讀取。這些舊資料早就截止不會再變
-// 動，所以用一次性 getDocs 就夠，不需要 onSnapshot 常駐訂閱。
-async function ensureMealChoicesLoaded(date){
-  if(!date || date >= recentCutoffDate()) return; // 監聽窗口內的資料已經有即時訂閱
-  if(loadedOldMealDates.has(date)) return;
-  loadedOldMealDates.add(date);
-  try{
-    const [lunchSnap, dinnerSnap] = await Promise.all([
-      getDocs(query(collectionGroup(db,'lunch_choice'), where('date','==',date))),
-      getDocs(query(collectionGroup(db,'dinner_choice'), where('date','==',date)))
-    ]);
-    lunchChoice[date] = lunchSnap.docs.map(d=>({id:d.id, ...d.data()}));
-    dinnerChoice[date] = dinnerSnap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
-  }catch(err){
-    loadedOldMealDates.delete(date); // 讀取失敗的話允許下次重試
-    subErr('lunch_choice/dinner_choice（舊日期）')(err);
-  }
-}
-async function ensureMealChoicesLoadedForWeek(wk){
-  const ds = Object.keys(entries).filter(d=>weekKey(d)===wk);
-  await Promise.all(ds.map(ensureMealChoicesLoaded));
-}
-
 function subscribeAll(){
   teardownListeners();
 
@@ -1044,26 +1030,9 @@ function subscribeAll(){
     });
     render();
   }, subErr('entries')));
-
-  // 只監聽「最近 RECENT_MEAL_DAYS 天」的退餐/點餐紀錄，更舊的資料改成使用者
-  // 實際展開該週次時才用 fetchOldMealChoices() 按需讀一次（見下方）。
-  const mealCutoff = recentCutoffDate();
-  unsubs.push(onSnapshot(query(collectionGroup(db,'lunch_choice'), where('date','>=',mealCutoff)), snap=>{
-    const grouped={};
-    snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
-    // 保留舊資料（按需讀取進來的），只覆蓋監聽窗口內的日期
-    Object.keys(lunchChoice).forEach(d=>{ if(d>=mealCutoff) delete lunchChoice[d]; });
-    Object.assign(lunchChoice, grouped);
-    render();
-  }, subErr('lunch_choice')));
-
-  unsubs.push(onSnapshot(query(collectionGroup(db,'dinner_choice'), where('date','>=',mealCutoff)), snap=>{
-    const grouped={};
-    snap.forEach(d=>{ const data=d.data(); const date=data.date; if(!date) return; (grouped[date]=grouped[date]||[]).push({id:d.id, ...data}); });
-    Object.keys(dinnerChoice).forEach(d=>{ if(d>=mealCutoff) delete dinnerChoice[d]; });
-    Object.assign(dinnerChoice, grouped);
-    render();
-  }, subErr('dinner_choice')));
+  // 讀取量優化：全班的點餐/退餐狀態已經合併進 entries/{date} 的
+  // lunch.choices/dinner.choices 欄位，上面這個 entries 監聽已經包含這些資料，
+  // 不用再另外監聽 lunch_choice/dinner_choice collectionGroup。
 
   unsubs.push(onSnapshot(collection(db,'events'), snap=>{
     snap.docChanges().forEach(ch=>{
@@ -1089,8 +1058,9 @@ async function addDate(dateStr, opts){
   opts=opts||{};
   if(!dateStr) return;
   if(!entries[dateStr]){
-    const data = { date:dateStr, lunch:{}, dinner:{}, lastEditBy:identity(), lastEditAt:new Date().toISOString() };
+    const data = { date:dateStr, lunch:{choices:{}}, dinner:{choices:{}}, lastEditBy:identity(), lastEditAt:new Date().toISOString() };
     await setDoc(doc(db,'entries',dateStr), data, {merge:true});
+    entries[dateStr] = data; // 本機先樂觀更新，避免 copyChoiceFromPrevWeek 讀不到剛建立的日期
     if(opts.copyFromPrevWeek){ await copyChoiceFromPrevWeek(dateStr); }
   }
   collapsedDates.delete(dateStr);
@@ -1100,54 +1070,40 @@ async function addDate(dateStr, opts){
   }
 }
 async function copyChoiceBetweenDates(fromKey, toDateStr){
-  const batch=writeBatch(db);
-  (lunchChoice[fromKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',toDateStr,'lunch_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:serverTimestamp()});
-  });
-  (dinnerChoice[fromKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',toDateStr,'dinner_choice',o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:serverTimestamp()});
-  });
-  await batch.commit();
+  await copyMealBetweenDates(fromKey, toDateStr, 'lunch');
+  await copyMealBetweenDates(fromKey, toDateStr, 'dinner');
 }
 async function copyChoiceFromPrevWeek(dateStr){
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
-  await ensureMealChoicesLoaded(prevKey); // 同上，避免上週資料剛好超出監聽窗口而複製不到
   await copyChoiceBetweenDates(prevKey, dateStr);
 }
 async function applyLastWeekMealTo(dateStr, meal){
   // 伙委專用（分午餐/晚餐各自獨立）：找「往前推 7 天」那個日期的這個餐別紀錄，複製過來。
   const label = meal==='lunch'?'午餐':'晚餐';
-  const list = meal==='lunch'?lunchChoice:dinnerChoice;
   const prevKey=toKey((()=>{const d=parseDate(dateStr); d.setDate(d.getDate()-7); return d;})());
-  await ensureMealChoicesLoaded(prevKey); // 上週同星期有可能已經超出即時監聽窗口，先按需補讀
-  if(!(list[prevKey]&&list[prevKey].length)){ showToast('找不到上週同星期的'+label+'資料'); return; }
+  if(!Object.keys(choiceMap(prevKey, meal)).length){ showToast('找不到上週同星期的'+label+'資料'); return; }
   await copyMealBetweenDates(prevKey, dateStr, meal);
-  await touchEntry(dateStr);
   showToast('已套用上週同星期的'+label+'資料');
 }
 async function copyMealBetweenDates(fromKey, toDateStr, meal){
-  const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
-  const list = meal==='lunch'?lunchChoice:dinnerChoice;
-  const batch=writeBatch(db);
-  (list[fromKey]||[]).forEach(o=>{
-    batch.set(doc(db,'entries',toDateStr,collName,o.id), {seatNo:o.seatNo||o.id, studentId:o.studentId||o.id, name:o.name||o.id, status:o.status, note:o.note||'', date:toDateStr, updatedBy:identity(), updatedAt:serverTimestamp()});
+  const src = choiceMap(fromKey, meal);
+  const fieldUpdates = {};
+  Object.keys(src).forEach(id=>{
+    const o = src[id];
+    fieldUpdates[meal+'.choices.'+id] = {seatNo:o.seatNo||id, studentId:o.studentId||id, name:o.name||id, status:o.status, note:o.note||'', updatedBy:identity(), updatedAt:serverTimestamp()};
   });
-  await batch.commit();
+  fieldUpdates.lastEditBy=identity();
+  fieldUpdates.lastEditAt=new Date().toISOString();
+  if(Object.keys(fieldUpdates).length>2) await updateDoc(doc(db,'entries',toDateStr), fieldUpdates);
 }
 async function applyPrevDayTo(dateStr, meal){
   // 伙委專用（分午餐/晚餐各自獨立）：找「這個日期之前、最近一次有這個餐別紀錄」的那一天
   // （通常就是昨天，如果昨天沒上課就會抓最近一次有上課的那天），把全班這個餐別的選擇複製過來。
   const label = meal==='lunch'?'午餐':'晚餐';
-  const list = meal==='lunch'?lunchChoice:dinnerChoice;
-  // entries（日期清單）本身沒有窗口化，所以先從全部已建立的日期裡找最近的候選日，
-  // 如果那天的餐別資料剛好超出即時監聽窗口，先按需補讀一次再判斷。
-  const candidateDate = Object.keys(entries).filter(k=>k<dateStr).sort((a,b)=>b.localeCompare(a))[0];
-  if(candidateDate) await ensureMealChoicesLoaded(candidateDate);
-  const prevKeys = Object.keys(list).filter(k=>k<dateStr).sort((a,b)=>b.localeCompare(a));
+  const prevKeys = Object.keys(entries).filter(k=>k<dateStr && Object.keys(choiceMap(k,meal)).length).sort((a,b)=>b.localeCompare(a));
   const prevKey = prevKeys[0];
   if(!prevKey){ showToast('找不到更早的'+label+'紀錄可以套用'); return; }
   await copyMealBetweenDates(prevKey, dateStr, meal);
-  await touchEntry(dateStr);
   showToast('已套用「'+formatMD(parseDate(prevKey))+'」的'+label+'資料');
 }
 async function addWeek(anchorDateStr){
@@ -1209,6 +1165,23 @@ function mealCounts(choiceList){
 function mealSummaryText(choiceList){
   const c=mealCounts(choiceList);
   return '訂'+c.ordered+'（葷'+c.meat+'／素'+c.veg+'）・退'+c.cancel+'・未選'+c.unset;
+}
+// 伙委端「批次送出」：把本機 staffDraft 疊加在 Firestore 目前已同步的資料上，
+// 讓畫面看到的是「已送出 + 尚未送出但已經在本機暫存」的合併結果，送出前後的
+// 顯示行為一致，使用者體驗上不會有落差。
+function mergedStaffChoiceArr(date, meal){
+  const base = choiceArr(date, meal);
+  const map = {}; base.forEach(c=>{ map[c.id]=Object.assign({}, c); });
+  Object.keys(staffDraft).forEach(k=>{
+    const d = staffDraft[k];
+    if(d.date!==date || d.meal!==meal) return;
+    if(d.next===null){ delete map[d.label]; }
+    else{ map[d.label] = Object.assign({}, map[d.label], {id:d.label, seatNo:d.label, name:d.name||d.label, status:d.next, note:d.note||'', pending:true}); }
+  });
+  return Object.values(map);
+}
+function pendingCountForDate(date){
+  return Object.keys(staffDraft).filter(k=>staffDraft[k].date===date).length;
 }
 
 // ============================================================
@@ -1510,13 +1483,15 @@ function renderMealTab(){
 
 function renderStaffDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
-  const lC=lunchChoice[date]||[], dC=dinnerChoice[date]||[];
-  // 監聽窗口以外、還沒按需讀取過的舊日期：先別顯示「0 人」這種會誤導的統計，
-  // 提示要展開才能看到正確人數。
-  const notLoaded = date < recentCutoffDate() && !loadedOldMealDates.has(date);
-  const headRight = notLoaded
-    ? `<span class="chip-summary">展開查看人數</span>`
-    : `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
+  const lC=mergedStaffChoiceArr(date,'lunch'), dC=mergedStaffChoiceArr(date,'dinner');
+  const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
+  const pending = pendingCountForDate(date);
+  const pendingBar = pending ? `
+      <div class="pending-bar" data-date="${date}" style="grid-column:1 / -1;">
+        <b>${pending} 筆異動尚未送出</b>
+        <button type="button" class="btn btn-primary" data-action="submit-day-changes" data-date="${date}">送出這天的異動</button>
+        <button type="button" class="btn btn-ghost" data-action="discard-day-changes" data-date="${date}">捨棄</button>
+      </div>` : '';
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
@@ -1524,6 +1499,7 @@ function renderStaffDateCard(date){
       <div class="date-head-right">${headRight}</div>
     </div>
     <div class="date-body">
+      ${pendingBar}
       ${renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lC)}
       ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
       <div class="date-note" style="grid-column:1 / -1;">
@@ -1545,7 +1521,8 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
     const c=choiceList.find(x=>x.id===lab);
     const status=c?c.status:'unset';
     const titleParts=[STATUS_LABEL[status]||'尚未選擇']; if(c&&c.note) titleParts.push('備註：'+c.note);
-    return `<span class="number-cell ${status}" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${lab}" title="${escapeHtml(titleParts.join('・'))}">${lab}</span>`;
+    if(c&&c.pending) titleParts.push('尚未送出');
+    return `<span class="number-cell ${status}${c&&c.pending?' pending':''}" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${lab}" title="${escapeHtml(titleParts.join('・'))}">${lab}</span>`;
   }).join('');
   const others=choiceList.filter(c=>!roster.includes(c.id));
   const notesList=choiceList.filter(c=>c.note);
@@ -1567,11 +1544,8 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
 
 function renderStudentDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
-  const lC=lunchChoice[date]||[], dC=dinnerChoice[date]||[];
-  const notLoaded = date < recentCutoffDate() && !loadedOldMealDates.has(date);
-  const headRight = notLoaded
-    ? `<span class="chip-summary">展開查看</span>`
-    : `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
+  const lC=choiceArr(date,'lunch'), dC=choiceArr(date,'dinner');
+  const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
@@ -1782,10 +1756,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
 
   if(action==='toggle'){
     if(ev.target.closest('.date-delete')||ev.target.closest('.copy-last-btn')) return;
-    if(collapsedDates.has(date)){
-      collapsedDates.delete(date);
-      ensureMealChoicesLoaded(date); // 展開的是監聽窗口以外的舊日期時，按需補讀一次
-    } else collapsedDates.add(date);
+    if(collapsedDates.has(date)){ collapsedDates.delete(date); } else collapsedDates.add(date);
     render();
   }
   else if(action==='toggle-week'){
@@ -1793,43 +1764,71 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const ds=Object.keys(entries).filter(d=>weekKey(d)===wk);
     const allCollapsed = ds.every(d=>collapsedDates.has(d));
     ds.forEach(d=>{ if(allCollapsed) collapsedDates.delete(d); else collapsedDates.add(d); });
-    if(allCollapsed) ensureMealChoicesLoadedForWeek(wk); // 展開整週時，按需補讀舊日期
     render();
   }
   else if(action==='cycle-status'){
-    // 伙委代填「點座號循環切換」修正：不能拿本機 onSnapshot 快取的 list[date] 來算
-    // 下一個狀態，因為如果同學這時候剛好也在送出自己的選擇，快取可能還沒更新到
-    // 最新版本，兩邊各自基於「舊的當下狀態」計算下一步，最後送出的請求會互相
-    // 覆蓋，導致紀錄流產或人數算錯。改用 runTransaction：在同一個事務裡即時向
-    // Firestore 讀出這份文件「當下最新」的內容，再算下一個狀態、寫回去；如果
-    // 事務進行中文件被別人改掉了，SDK 會自動重讀重算重試，確保不會覆蓋掉別人
-    // 剛送出的資料。 https://firebase.google.com/docs/firestore/manage-data/transactions
+    // 伙委代填改成「本機批次暫存」：點座號只更新本機 staffDraft，不立刻寫入
+    // Firestore，畫面用 mergedStaffChoiceArr() 疊加顯示暫存效果。要等按下這
+    // 一天的「送出這天的異動」才會真的一次寫入，同一份文件的多筆異動合併成
+    // 一次 updateDoc，避免每點一下就打一次 Firestore。
     const label=el.dataset.label;
-    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const order=['meat','veg','cancel',null];
-    const ref=doc(db,'entries',date,collName,label);
-    await runTransaction(db, async (tx)=>{
-      const snap = await tx.get(ref);
-      const existing = snap.exists() ? snap.data() : null;
-      const idx = existing ? order.indexOf(existing.status) : -1;
-      const next = order[(idx+1)%order.length];
-      if(next===null){ tx.delete(ref); }
-      else{
-        tx.set(ref, {
-          seatNo:label, studentId:label, name: existing?(existing.name||label):label, status:next,
-          note: existing?(existing.note||''):'', date, updatedBy:identity(), updatedAt:serverTimestamp()
-        }, {merge:true});
-      }
+    const key=date+'|'+meal+'|'+label;
+    const live=choiceMap(date, meal)[label];
+    const liveStatus=live?live.status:null;
+    const d=staffDraft[key];
+    const current = d ? d.next : liveStatus;
+    const baseline = d ? d.baseline : liveStatus;
+    const idx=order.indexOf(current);
+    const next=order[(idx+1)%order.length];
+    if(next===baseline){ delete staffDraft[key]; }
+    else{
+      staffDraft[key] = { date, meal, label, baseline, next,
+        name: live?(live.name||label):label, note: live?(live.note||''):'' };
+    }
+    render();
+  }
+  else if(action==='submit-day-changes'){
+    // 把這一天所有暫存的異動一次送出。送出前逐筆比對 baseline（開始編輯當下
+    // 看到的狀態）跟 Firestore 目前最新值：如果不一致，代表這段時間被別人改
+    // 過了，就跳過那一筆（不覆蓋），其餘沒有衝突的照樣一次 updateDoc 送出。
+    ev.stopPropagation();
+    const pendingKeys=Object.keys(staffDraft).filter(k=>staffDraft[k].date===date);
+    if(!pendingKeys.length) return;
+    const fieldUpdates={}; const conflicts=[]; const applied=[];
+    pendingKeys.forEach(k=>{
+      const p=staffDraft[k];
+      const live=choiceMap(p.date,p.meal)[p.label];
+      const liveStatus=live?live.status:null;
+      if(liveStatus!==p.baseline){ conflicts.push(p); return; }
+      const path=p.meal+'.choices.'+p.label;
+      fieldUpdates[path] = p.next===null ? deleteField() : {
+        seatNo:p.label, studentId:p.label, name:p.name||p.label, status:p.next, note:p.note||'',
+        updatedBy:identity(), updatedAt:serverTimestamp()
+      };
+      applied.push(k);
     });
-    await touchEntry(date);
+    if(applied.length){
+      fieldUpdates.lastEditBy=identity();
+      fieldUpdates.lastEditAt=new Date().toISOString();
+      await updateDoc(doc(db,'entries',date), fieldUpdates);
+    }
+    applied.forEach(k=>delete staffDraft[k]);
+    if(conflicts.length){ showToast('已送出，但有 '+conflicts.length+' 筆因為被別人改過而跳過，請重新確認'); }
+    else if(applied.length){ showToast('已送出 '+applied.length+' 筆異動'); }
+    render();
+  }
+  else if(action==='discard-day-changes'){
+    ev.stopPropagation();
+    Object.keys(staffDraft).filter(k=>staffDraft[k].date===date).forEach(k=>delete staffDraft[k]);
+    render();
   }
   else if(action==='pick-status'){
     // 同學點選按鈕只更新「本機暫存」，畫面會立刻反白，但還沒送到伺服器，
     // 要等按下「確定送出」才會真的寫入 Firestore。
     const status=el.dataset.status;
     const key=date+'|'+meal;
-    const list = meal==='lunch'?lunchChoice:dinnerChoice;
-    const existing=(list[date]||[]).find(o=>o.id===studentId);
+    const existing=choiceMap(date, meal)[studentId];
     const savedStatus = existing?existing.status:'';
     const current = draftChoice[key] ? draftChoice[key].status : savedStatus;
     const newStatus = current===status ? '' : status; // 再點一次同一個 = 取消選擇
@@ -1838,21 +1837,19 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   }
   else if(action==='submit-choice'){
     const key=date+'|'+meal;
-    const list = meal==='lunch'?lunchChoice:dinnerChoice;
-    const existing=(list[date]||[]).find(o=>o.id===studentId);
+    const existing=choiceMap(date, meal)[studentId];
     const savedStatus = existing?existing.status:'';
     const draft=draftChoice[key];
     const status = draft ? draft.status : savedStatus;
-    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
-    const ref=doc(db,'entries',date,collName,studentId);
+    const path=meal+'.choices.'+studentId;
     if(!status){
-      await deleteDoc(ref);
+      await updateDoc(doc(db,'entries',date), { [path]: deleteField() });
       showToast('已送出：取消訂餐選擇');
     } else {
-      await setDoc(ref, {
+      await updateDoc(doc(db,'entries',date), { [path]: {
         seatNo:studentId, studentId, name:studentId, status,
-        date, updatedBy:identity(), updatedAt:serverTimestamp()
-      }, {merge:true});
+        updatedBy:identity(), updatedAt:serverTimestamp()
+      }});
       showToast('已送出：'+(STATUS_LABEL[status]||''));
     }
     delete draftChoice[key];
@@ -1865,20 +1862,21 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   else if(action==='add-name'){
     const input=document.querySelector(`input[data-action="name-input"][data-date="${date}"][data-meal="${meal}"]`);
     const name=input.value.trim(); if(!name) return;
-    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const id='other__'+uid();
-    await setDoc(doc(db,'entries',date,collName,id), {seatNo:id, studentId:id, name, status:'unset', note:'', date, updatedBy:identity(), updatedAt:serverTimestamp()});
-    await touchEntry(date);
+    const path=meal+'.choices.'+id;
+    await updateDoc(doc(db,'entries',date), {
+      [path]: {seatNo:id, studentId:id, name, status:'unset', note:'', updatedBy:identity(), updatedAt:serverTimestamp()},
+      lastEditBy:identity(), lastEditAt:new Date().toISOString()
+    });
     input.value='';
   }
   else if(action==='remove-choice'){
-    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
-    await deleteDoc(doc(db,'entries',date,collName,el.dataset.id));
-    await touchEntry(date);
+    const path=meal+'.choices.'+el.dataset.id;
+    await updateDoc(doc(db,'entries',date), { [path]: deleteField(), lastEditBy:identity(), lastEditAt:new Date().toISOString() });
   }
   else if(action==='clear-note'){
-    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
-    await updateDoc(doc(db,'entries',date,collName,el.dataset.id), {note:'', updatedBy:identity(), updatedAt:serverTimestamp()});
+    const path=meal+'.choices.'+el.dataset.id+'.note';
+    await updateDoc(doc(db,'entries',date), { [path]: '' });
   }
   else if(action==='delete-event'){ ev.stopPropagation(); await deleteEvent(eventId); }
   else if(action==='add-menu-item'){
@@ -1928,10 +1926,12 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
     ev.preventDefault();
     const date=ev.target.dataset.date, meal=ev.target.dataset.meal, name=ev.target.value.trim();
     if(!name) return;
-    const collName = meal==='lunch'?'lunch_choice':'dinner_choice';
     const id='other__'+uid();
-    await setDoc(doc(db,'entries',date,collName,id), {seatNo:id, studentId:id, name, status:'unset', note:'', date, updatedBy:identity(), updatedAt:serverTimestamp()});
-    await touchEntry(date);
+    const path=meal+'.choices.'+id;
+    await updateDoc(doc(db,'entries',date), {
+      [path]: {seatNo:id, studentId:id, name, status:'unset', note:'', updatedBy:identity(), updatedAt:serverTimestamp()},
+      lastEditBy:identity(), lastEditAt:new Date().toISOString()
+    });
     ev.target.value='';
   }
   else if(ev.target.dataset.action==='event-name-input' && ev.key==='Enter'){
@@ -2099,6 +2099,60 @@ document.getElementById('theme-toggle-btn').addEventListener('click', ()=>{
   document.documentElement.setAttribute('data-theme', next);
   try{ localStorage.setItem('theme', next); }catch(e){}
   syncThemeUI(next);
+});
+
+// ============================================================
+// 一次性資料搬移：舊版「entries/{date}/lunch_choice、dinner_choice」子集合
+// →新版 entries/{date} 文件裡的 lunch.choices／dinner.choices map 欄位。
+// 冪等設計：每個座號如果新版欄位裡已經有資料就跳過，不會覆蓋掉已經搬移或
+// 之後新產生的資料，所以可以放心重複按這個按鈕，也不怕跟正在使用中的系統
+// 互相打架。搬移完成後，舊子集合資料還留著（沒有刪除），純粹當備份用。
+// ============================================================
+async function migrateLegacyChoices(){
+  showToast('開始搬移舊點餐資料，請稍候…');
+  let migratedDates = 0, migratedSeats = 0, failedDates = 0;
+  const dates = Object.keys(entries).sort();
+  for(const date of dates){
+    const fieldUpdates = {};
+    for(const meal of ['lunch','dinner']){
+      const collName = meal==='lunch' ? 'lunch_choice' : 'dinner_choice';
+      let snap;
+      try{ snap = await getDocs(collection(db,'entries',date,collName)); }
+      catch(err){ failedDates++; continue; }
+      if(snap.empty) continue;
+      const already = choiceMap(date, meal);
+      snap.forEach(d=>{
+        if(already[d.id]) return;
+        const o = d.data();
+        fieldUpdates[meal+'.choices.'+d.id] = {
+          seatNo: o.seatNo || d.id, studentId: o.studentId || d.id, name: o.name || d.id,
+          status: o.status, note: o.note || '', updatedBy: o.updatedBy || '（搬移自舊資料）',
+          updatedAt: o.updatedAt || null
+        };
+        migratedSeats++;
+      });
+    }
+    if(Object.keys(fieldUpdates).length){
+      try{ await updateDoc(doc(db,'entries',date), fieldUpdates); migratedDates++; }
+      catch(err){ failedDates++; console.error('[搬移失敗：'+date+']', err); }
+    }
+  }
+  showToast('搬移完成：共 '+migratedDates+' 天、'+migratedSeats+' 筆紀錄'+(failedDates?'（'+failedDates+' 天讀取/寫入失敗，可以重新按一次再試）':''));
+}
+document.getElementById('migrate-choices-btn').addEventListener('click', async ()=>{
+  const btn=document.getElementById('migrate-choices-btn');
+  btn.disabled=true; const orig=btn.textContent; btn.textContent='搬移中…';
+  try{ await migrateLegacyChoices(); }
+  catch(err){ console.error(err); showToast('搬移失敗：'+(err.message||err.code||'未知錯誤')); }
+  finally{ btn.disabled=false; btn.textContent=orig; }
+});
+
+// 伙委批次暫存尚未送出時，離開頁面前提醒一下，避免手滑關掉分頁弄丟還沒送出的異動。
+window.addEventListener('beforeunload', (ev)=>{
+  if(Object.keys(staffDraft).length){
+    ev.preventDefault();
+    ev.returnValue = '';
+  }
 });
 </script>
 </body>

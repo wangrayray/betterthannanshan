@@ -4,16 +4,16 @@ rules_version = '2';
 // 班務系統（退餐紀錄／外食訂購）Firestore 安全規則
 //
 // 角色判斷：
-//   - 伙委（staff）：Firebase Auth 帳號的 email，剛好在 /staff/{email} 底下有一筆文件，
-//     即視為伙委，可讀寫所有 collection。
-//   - 同學（student）：Firebase Auth 帳號的 email 格式為 座號@yourclass.local
-//     （網域字串需與 index.html 內的 CLASS_DOMAIN 常數一致）。
-//     同學只能寫入「自己座號」對應的文件（訂餐選擇 lunch_choice/dinner_choice、
-//     外食訂單 orders），且該座號必須已存在於 /students 名冊中才允許寫入。
-//   - 外食訂購人（event coordinator）：伙委在設定頁指定某個座號、效期 14 天，
-//     期間內該座號的帳號可以完整管理 events（含建立/刪除活動、菜單、任何人的訂單），
-//     但無法碰退餐紀錄、名冊、伙委名單等其他 collection。到期後自動失效，
-//     不需要手動清除文件（規則會直接比對到期時間，過期文件視同無效）。
+// - 伙委（staff）：Firebase Auth 帳號的 email，剛好在 /staff/{email} 底下有一筆文件，
+//   即視為伙委，可讀寫所有 collection。
+// - 同學（student）：Firebase Auth 帳號的 email 格式為 座號@yourclass.local
+//   （網域字串需與 index.html 內的 CLASS_DOMAIN 常數一致）。
+//   同學只能寫入「自己座號」對應的文件（訂餐選擇 lunch_choice/dinner_choice、
+//   外食訂單 orders），且該座號必須已存在於 /students 名冊中才允許寫入。
+// - 外食訂購人（event coordinator）：伙委在設定頁指定某個座號、效期 14 天，
+//   期間內該座號的帳號可以完整管理 events（含建立/刪除活動、菜單、任何人的訂單），
+//   但無法碰退餐紀錄、名冊、伙委名單等其他 collection。到期後自動失效，
+//   不需要手動清除文件（規則會直接比對到期時間，過期文件視同無效）。
 //
 // 注意：CLASS_DOMAIN 這裡寫死在規則裡（下方 classDomain() 函式），
 // 如果你把 index.html 裡的 CLASS_DOMAIN 改成別的字串，這裡也要跟著改。
@@ -94,6 +94,53 @@ service cloud.firestore {
       return last is timestamp && request.time < last + duration.value(1, 's');
     }
 
+    // ---------------- entries.lunch.choices / entries.dinner.choices 的欄位級權限 ----------------
+    // 讀取量優化：原本「entries/{date}/lunch_choice/{座號}」每個人各自一份子文件，
+    // 伙委頁要用 collectionGroup 一次讀「所有日期 × 全班」，等於幾百份小文件；
+    // 改成把全班的點餐狀態合併存進 entries/{date} 這一份文件裡的
+    // lunch.choices.{座號} / dinner.choices.{座號} 這兩個 map 欄位，
+    // 伙委頁只需要監聽 entries 這個 collection（幾份文件），不用再另外監聽
+    // lunch_choice/dinner_choice，讀取量從「幾百份」降到「幾份」。
+    //
+    // 因為多人共用同一份文件，同學不能再用「文件 id 是不是自己的座號」來判斷
+    // 權限（現在大家都寫同一份文件），必須改成「只能改動 lunch/dinner 兩個
+    // 頂層欄位其中一個，而且該欄位底下 choices map 只能新增/修改/刪除自己座號
+    // 那一個 key」，其他人的資料、note/lastEditBy 等欄位完全不能碰。
+    // 用 Map.diff().affectedKeys() 逐層比對前後差異來驗證這件事。
+    function isValidStudentChoiceUpdate() {
+      return isRosterStudent() && isValidChoiceEdit();
+    }
+    function isValidChoiceEdit() {
+      // 一次只能改 lunch 或 dinner 其中一個頂層欄位，不能兩個一起改，
+      // 也不能同時動到 note / lastEditBy / lastEditAt / date 等其他欄位。
+      let changedTop = request.resource.data.diff(resource.data).affectedKeys();
+      let onlyOneMeal = changedTop.size() == 1 && changedTop.hasAny(['lunch', 'dinner']);
+      let meal = changedTop.hasAny(['lunch']) ? 'lunch' : 'dinner';
+      return onlyOneMeal && isValidSeatEdit(meal);
+    }
+    // 拆成獨立函式：Firestore 規則單一函式最多只能宣告 10 個 let 變數，
+    // isValidChoiceEdit() 裡面如果把 choices map 的檢查也全部攤開寫，會超過上限。
+    function isValidSeatEdit(meal) {
+      let sid = studentIdOf();
+      let oldChoices = resource.data.get(meal, {}).get('choices', {});
+      let newChoices = request.resource.data.get(meal, {}).get('choices', {});
+      let changedSeats = newChoices.diff(oldChoices).affectedKeys();
+      // choices map 裡被改動的 key，只能是自己的座號，不能碰別人的紀錄。
+      let onlyOwnSeat = changedSeats.hasOnly([sid]);
+      // 沿用同一份「同一筆紀錄距離上次更新要滿 1 秒」節流機制，防止惡意灌爆；
+      // 因為現在是存在 choices map 裡的巢狀欄位，改成直接比對這個座號自己的
+      // updatedAt，不受同一份文件裡其他座號寫入頻率的影響。用 .get(sid, {}) 而不是
+      // 先判斷是否存在再取值，避免三元運算子裡混用 null 跟其他型別導致型別檢查出錯。
+      let last = oldChoices.get(sid, {}).get('updatedAt', null);
+      let notThrottled = !(last is timestamp && request.time < last + duration.value(1, 's'));
+      let existsAfter = sid in newChoices;
+      // 新增/修改：新的紀錄一定要帶 serverTimestamp()（跟外層 hasFreshTimestamp 邏輯一樣，
+      // 防止偽造時間）。刪除（退選）：新的 choices map 裡已經沒有這個座號的 key。
+      return onlyOwnSeat && notThrottled && (existsAfter
+        ? newChoices.get(sid, {}).get('updatedAt', null) == request.time
+        : (sid in oldChoices));
+    }
+
     // ---------------- settings ----------------
     match /settings/{docId} {
       allow read: if isSignedIn();
@@ -122,9 +169,15 @@ service cloud.firestore {
     }
 
     // ---------------- entries（訂餐/退餐紀錄，依日期） ----------------
+    // 全班的點餐/退餐狀態現在合併存在同一份文件的 lunch.choices / dinner.choices
+    // map 欄位裡（取代原本一人一份子文件的 lunch_choice/dinner_choice），伙委可
+    // 以完整讀寫；同學只能透過 isValidStudentChoiceUpdate() 改動自己座號那一個
+    // key，其餘欄位（note、lastEditBy...）跟其他同學的資料完全不能碰。
     match /entries/{date} {
       allow read: if isSignedIn();
-      allow write: if isStaff();
+      allow create: if isStaff();
+      allow delete: if isStaff();
+      allow update: if isStaff() || isValidStudentChoiceUpdate();
     }
 
     // ---------------- events（外食訂購活動） ----------------
@@ -144,18 +197,18 @@ service cloud.firestore {
     // 用的是即時監聽 onSnapshot，錯誤不會跳出明顯的例外，看起來就像是「資料寫
     // 進去了，畫面卻永遠不會更新」）。這正是先前系統看起來「沒有反應」的真正
     // 原因，因此以下規則一律寫在最外層，不要巢狀寫在其他 match 裡面。
+    // 舊版「一人一份子文件」的 lunch_choice/dinner_choice：資料已搬到
+    // entries/{date} 的 lunch.choices/dinner.choices 欄位，前端不再寫入這裡，
+    // 只保留讀取權限給搬移工具（migrateLegacyChoices）用一次性讀取，
+    // 寫入只留給伙委（方便之後手動清除舊資料），同學不再能直接寫這裡。
     match /{path=**}/lunch_choice/{sid} {
       allow read: if isSignedIn();
-      allow create: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp();
-      allow update: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp() && !isThrottled(resource.data);
-      allow delete: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && !isThrottled(resource.data);
+      allow write: if isStaff();
     }
 
     match /{path=**}/dinner_choice/{sid} {
       allow read: if isSignedIn();
-      allow create: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp();
-      allow update: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp() && !isThrottled(resource.data);
-      allow delete: if (isStaff() || (isOwnId(sid) && isRosterStudent())) && !isThrottled(resource.data);
+      allow write: if isStaff();
     }
 
     match /{path=**}/menu/{itemId} {

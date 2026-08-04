@@ -18,17 +18,22 @@ students/{seatNo}            全班座號名冊（伙委在設定頁存檔時自
 staff/{email}                伙委名單，文件 id = 該伙委的登入 email
 eventCoordinators/{seatNo}   外食訂購人名單，效期 14 天，過期自動失效
 entries/{date}                每日訂餐紀錄
-  └ lunch_choice/{seatNo}      該日午餐每人的選擇，一人一份文件
+  lunch.choices.{seatNo}       該日午餐每人的選擇（合併存在 entries 文件裡的 map 欄位，
+                               見下方「讀取量優化：資料結構合併」）
                                {status: meat|veg|cancel, note, updatedBy, updatedAt}
-  └ dinner_choice/{seatNo}     該日晚餐每人的選擇，格式同上
+  dinner.choices.{seatNo}      該日晚餐每人的選擇，格式同上
+  lunch_choice/{seatNo}        （舊版子集合，已不再寫入，只保留給搬移工具讀取用）
+  dinner_choice/{seatNo}       （舊版子集合，已不再寫入，只保留給搬移工具讀取用）
 events/{eventId}              外食訂購活動
   └ menu/{itemId}              菜單品項（名稱、金額，由伙委/外食訂購人設定）
   └ orders/{seatNo}            每人的訂購內容（品項＋數量，由同學自己選取）
 ```
 
-之所以把「每人的選擇」「訂單」拆成每人一份文件（子集合），是因為 Firestore
-規則只能檢查「整份文件」的讀寫權限，沒辦法檢查「陣列裡的某一筆」。拆成
-子集合後，才能讓 Firestore 規則真正做到「同學只能寫自己座號那一份」。
+外食訂單（`orders`）仍然拆成每人一份子文件，因為 Firestore 規則只能檢查
+「整份文件」的讀寫權限，沒辦法檢查「陣列裡的某一筆」。退餐/點餐紀錄則改成
+合併存在 `entries/{date}` 這一份文件的 map 欄位裡（見下方說明），用
+`Map.diff().affectedKeys()` 檢查「只改動了自己座號那個 key」來達到一樣的
+權限隔離效果，同時大幅降低讀取量。
 
 ### 退餐紀錄的選擇邏輯
 
@@ -125,6 +130,35 @@ collection 建立 `onSnapshot` 常駐監聽，只要任何一個人寫入一筆�
    原本的即時監聽不變。
    沒有選擇的方案：升級 Blaze（用量付費）方案——這個能徹底解除額度上限，但
    會開始按用量收費，這次先用不花錢的三個優化來降低讀取量。
+
+### 讀取量優化：資料結構合併（lunch_choice/dinner_choice → entries 的 map 欄位）
+
+原本 `entries/{date}/lunch_choice/{座號}`、`dinner_choice/{座號}` 是「一人一
+份子文件」，伙委頁要用 `collectionGroup()` 一次讀「所有日期 × 全班」，等於
+幾百份小文件的讀取量；同學/伙委每次代填一筆，也都是各自獨立的一次 Firestore
+寫入。這次把全班的點餐狀態改成合併存進 `entries/{date}` 這一份文件裡的
+`lunch.choices.{座號}` / `dinner.choices.{座號}` 兩個 map 欄位：
+
+- **讀取量**：伙委頁只需要監聽 `entries` 這個 collection（幾份文件，一個學期
+  頂多幾十天），不用再另外監聽 `lunch_choice`／`dinner_choice`，讀取量從
+  「幾百份」降到「幾份」。
+- **權限隔離**：因為多人共用同一份文件，`firestore.rules` 改用
+  `Map.diff().affectedKeys()` 逐層比對，只允許同學一次改動 `lunch` 或
+  `dinner` 其中一個頂層欄位，而且該欄位底下 `choices` map 只能新增/修改/
+  刪除「自己座號」那一個 key，其他人的資料、`note`／`lastEditBy` 等欄位完全
+  不能碰（詳見 `firestore.rules` 裡的 `isValidStudentChoiceUpdate()`）。
+- **寫入批次化**：同學端本來就是「先在本機暫存選擇，按『確定送出』才真的寫入
+  Firestore」；這次伙委代填也改成同樣的模式——點座號格只更新本機暫存
+  （`staffDraft`），畫面用暫存疊加即時顯示效果，累積好這一天要改的所有座號
+  後，按「送出這天的異動」才一次用一個 `updateDoc()`（多個 dot-path 欄位）
+  送出，取代原本「點一下就打一次 Firestore」的做法。送出前會逐筆比對「開始
+  編輯當下看到的狀態」跟 Firestore 目前最新值，如果不一致（代表被別人改
+  過）就跳過那一筆、不會覆蓋掉別人剛送出的資料，不需要用到 `runTransaction`。
+- **一次性資料搬移**：伙委登入後，到「⚙️ 設定」面板最下方按一次「搬移舊點餐
+  資料」，就會把舊版 `lunch_choice`／`dinner_choice` 子集合裡的資料複製進新
+  的 `lunch.choices`／`dinner.choices` 欄位（`migrateLegacyChoices()`）。這個
+  按鈕是冪等設計：已經搬移過的座號會直接跳過，不會覆蓋，所以可以放心重複按
+  到看到「搬移完成」為止；舊子集合資料搬移後不會被刪除，純粹留著當備份。
 
 ## 角色權限（Firestore Rules 強制）
 
