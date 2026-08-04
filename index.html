@@ -92,6 +92,7 @@
   .week-title{font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;margin:0 0 10px 4px;text-transform:uppercase;letter-spacing:.04em;}
   .week-title::after{content:"";flex:1;height:1px;background:var(--line);}
   .week-delete-btn{border:none;background:none;color:var(--danger);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;text-transform:none;letter-spacing:normal;white-space:nowrap;}
+  .week-collapse-btn{border:none;background:none;color:var(--outside);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;text-transform:none;letter-spacing:normal;white-space:nowrap;margin-right:10px;}
 
   .date-card,.event-card{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;}
   .date-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;cursor:pointer;user-select:none;flex-wrap:wrap;gap:8px;}
@@ -342,10 +343,10 @@
     <h3>登入</h3>
     <div class="sub">使用 Firebase 帳號登入。如果密碼輸入錯誤，系統會直接擋下並顯示錯誤，不會誤建立新帳號；第一次使用請按「還沒有帳號？註冊新帳號」——請務必記住密碼，之後無法在前端重設。</div>
     <div class="tab-bar" style="margin-bottom:14px;">
-      <button type="button" class="tab-btn active" id="role-select-staff">👩‍🍳 伙委</button>
-      <button type="button" class="tab-btn" id="role-select-student">🎓 同學</button>
+      <button type="button" class="tab-btn" id="role-select-staff">👩‍🍳 伙委</button>
+      <button type="button" class="tab-btn active" id="role-select-student">🎓 同學</button>
     </div>
-    <div class="role-block" id="role-block-staff">
+    <div class="role-block" id="role-block-staff" style="display:none;">
       <h4>👩‍🍳 伙委登入</h4>
       <div class="sub" style="margin-bottom:8px;">請使用你的個人 Email。註冊帳號後，需請管理員在 Firestore 的 staff collection 新增你的權限才能進入伙委端。</div>
       <input type="text" id="staff-email-input" placeholder="Email" autocomplete="username">
@@ -353,7 +354,7 @@
       <button class="btn btn-primary" id="staff-login-btn">登入</button>
       <button class="btn btn-ghost" type="button" id="staff-register-btn">還沒有帳號？註冊新帳號</button>
     </div>
-    <div class="role-block" id="role-block-student" style="display:none;">
+    <div class="role-block" id="role-block-student">
       <h4>🎓 同學登入</h4>
       <div class="sub" style="margin-bottom:8px;">用你的座號登入（跟退餐點選格一樣，例如 05、師）。</div>
       <input type="text" id="student-id-input" placeholder="座號" autocomplete="username">
@@ -512,6 +513,7 @@ let eventCoordinators = {}; // seatNo -> {expiresAt,grantedBy,grantedAt}
 let draftChoice = {};    // "date|meal" -> {status,note}  同學按選項時的本機暫存，按「確定送出」才會真的寫入 Firestore
 
 let collapsedDates = new Set();
+let defaultedCollapseDates = new Set();
 let role = '';          // 'staff' | 'student' | ''
 let staffName = '';
 let studentId = '';
@@ -847,6 +849,7 @@ function teardownState(){
   studentsRoster={}; staffList={}; eventCoordinators={}; draftChoice={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
+  defaultedCollapseDates=new Set();
 }
 
 onAuthStateChanged(auth, async (user)=>{
@@ -1381,12 +1384,27 @@ function renderMealTab(){
   const weeks={};
   dates.forEach(d=>{ const wk=weekKey(d); (weeks[wk]=weeks[wk]||[]).push(d); });
   const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
+  const curWeekKey = weekKey(todayStr());
+
+  if(role==='student'){
+    dates.forEach(d=>{
+      if(!defaultedCollapseDates.has(d)){
+        defaultedCollapseDates.add(d);
+        if(weekKey(d)!==curWeekKey) collapsedDates.add(d);
+      }
+    });
+  }
 
   let html=addBarHtml+noteHtml;
   weekKeys.forEach(wk=>{
     const ds=weeks[wk].sort((a,b)=>a.localeCompare(b));
     const weekDeleteBtn = role==='staff' ? `<button class="week-delete-btn" data-action="delete-week" data-week="${wk}">刪除整週</button>` : '';
-    html += '<div class="week-group" data-week="'+wk+'"><div class="week-title">'+weekLabel(wk)+weekDeleteBtn+'</div>';
+    let weekCollapseBtn = '';
+    if(role==='student' && wk===curWeekKey){
+      const allCollapsed = ds.every(d=>collapsedDates.has(d));
+      weekCollapseBtn = `<button class="week-collapse-btn" data-action="toggle-week" data-week="${wk}">${allCollapsed?'展開本週':'一鍵收合本週'}</button>`;
+    }
+    html += '<div class="week-group" data-week="'+wk+'"><div class="week-title">'+weekCollapseBtn+weekLabel(wk)+weekDeleteBtn+'</div>';
     ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
     html += '</div>';
   });
@@ -1664,6 +1682,13 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   if(action==='toggle'){
     if(ev.target.closest('.date-delete')||ev.target.closest('.copy-last-btn')) return;
     if(collapsedDates.has(date)) collapsedDates.delete(date); else collapsedDates.add(date);
+    render();
+  }
+  else if(action==='toggle-week'){
+    const wk=el.dataset.week;
+    const ds=Object.keys(entries).filter(d=>weekKey(d)===wk);
+    const allCollapsed = ds.every(d=>collapsedDates.has(d));
+    ds.forEach(d=>{ if(allCollapsed) collapsedDates.delete(d); else collapsedDates.add(d); });
     render();
   }
   else if(action==='cycle-status'){
