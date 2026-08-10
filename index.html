@@ -200,12 +200,14 @@
   .meal-summary{font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.7;}
   .meal-summary b{color:var(--ink);}
   .same-as-btn{display:block;width:100%;font-family:inherit;border:1px dashed var(--outside);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;background:var(--outside-bg);color:var(--outside);cursor:pointer;margin-bottom:8px;text-align:center;}
-  .choice-buttons{display:flex;gap:8px;margin-bottom:8px;}
-  .choice-btn{flex:1;font-family:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 6px;font-size:13px;font-weight:700;background:var(--paper);color:var(--ink-soft);cursor:pointer;text-align:center;}
+  .choice-buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+  .choice-btn{font-family:inherit;border:1px solid var(--line);border-radius:10px;padding:14px 8px;font-size:14px;font-weight:700;background:var(--paper);color:var(--ink-soft);cursor:pointer;text-align:center;}
   .meal-card.lunch .choice-btn.active.meat{background:var(--lunch);color:#fff;border-color:var(--lunch);}
   .meal-card.dinner .choice-btn.active.meat{background:var(--dinner);color:#fff;border-color:var(--dinner);}
   .choice-btn.active.veg{background:var(--mine);color:#fff;border-color:var(--mine);}
   .choice-btn.active.cancel{background:var(--danger);color:#fff;border-color:var(--danger);}
+  .choice-btn.active.recur{background:var(--outside);color:#fff;border-color:var(--outside);}
+  .choice-btn.recur{font-size:12.5px;}
   .note-input{width:100%;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:12.5px;background:var(--paper);color:var(--ink);margin-top:2px;}
   .note-input:disabled{background:var(--paper-soft);color:var(--ink-soft);}
   .submit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);}
@@ -390,13 +392,18 @@
       <div class="chips" id="coordinator-list" style="margin-top:8px;"></div>
     </div>
     <div class="row">
-      <label>固定不定餐（每週這幾天自動退餐，座號需在名冊內）</label>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        <input type="text" id="set-recur-seat" placeholder="座號" style="width:70px;">
-        <span class="recur-weekday-picker" id="recur-weekday-picker"><label><input type="checkbox" value="0">日</label><label><input type="checkbox" value="1">一</label><label><input type="checkbox" value="2">二</label><label><input type="checkbox" value="3">三</label><label><input type="checkbox" value="4">四</label><label><input type="checkbox" value="5">五</label><label><input type="checkbox" value="6">六</label></span>
+      <label>固定不定餐（每週這幾天自動退餐，午餐／晚餐分開設定，座號需在名冊內）</label>
+      <div style="margin-bottom:6px;"><input type="text" id="set-recur-seat" placeholder="座號" style="width:70px;"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+        <span style="width:34px;font-size:12px;color:var(--ink-soft);flex-shrink:0;">午餐</span>
+        <span class="recur-weekday-picker" id="recur-weekday-picker-lunch"><label><input type="checkbox" value="0">日</label><label><input type="checkbox" value="1">一</label><label><input type="checkbox" value="2">二</label><label><input type="checkbox" value="3">三</label><label><input type="checkbox" value="4">四</label><label><input type="checkbox" value="5">五</label><label><input type="checkbox" value="6">六</label></span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span style="width:34px;font-size:12px;color:var(--ink-soft);flex-shrink:0;">晚餐</span>
+        <span class="recur-weekday-picker" id="recur-weekday-picker-dinner"><label><input type="checkbox" value="0">日</label><label><input type="checkbox" value="1">一</label><label><input type="checkbox" value="2">二</label><label><input type="checkbox" value="3">三</label><label><input type="checkbox" value="4">四</label><label><input type="checkbox" value="5">五</label><label><input type="checkbox" value="6">六</label></span>
         <button class="btn btn-ghost" id="set-recurring-skip-btn" type="button">設定</button>
       </div>
-      <div class="sub" style="margin:6px 0 0;">勾選的星期會覆蓋這個座號目前的固定退餐設定；同學也可以在自己的退餐紀錄卡片上自行開關。</div>
+      <div class="sub" style="margin:6px 0 0;">輸入座號後會自動帶出目前的設定；勾選的星期會覆蓋這個座號午餐／晚餐目前的固定退餐設定，同學也可以在自己的退餐紀錄卡片上，針對每一餐自行開關。</div>
       <div class="chips" id="recurring-skip-list" style="margin-top:8px;"></div>
     </div>
     <div class="row">
@@ -540,10 +547,10 @@ function choiceMap(date, meal){
   // 顯示、統計、通知都會照一般退餐處理；一旦有真正的紀錄寫進 Firestore，
   // 就以真正的紀錄為準（見下方 !merged[seat] 判斷），本人隨時可以在那一天
   // 另外選擇葷/素來覆蓋掉這次的自動退餐。
-  const weekdays = Object.keys(recurringSkips);
-  if(!weekdays.length) return base;
+  const seatsWithSkip = Object.keys(recurringSkips);
+  if(!seatsWithSkip.length) return base;
   const wd = parseDate(date).getDay();
-  const skipSeats = weekdays.filter(seat=>hasRecurringSkipWeekday(seat, wd));
+  const skipSeats = seatsWithSkip.filter(seat=>hasRecurringSkipWeekday(seat, meal, wd));
   if(!skipSeats.length) return base;
   const merged = Object.assign({}, base);
   skipSeats.forEach(seat=>{
@@ -554,12 +561,18 @@ function choiceMap(date, meal){
   });
   return merged;
 }
-function recurringSkipWeekdays(seatNo){
+function recurringSkipWeekdays(seatNo, meal){
   const d=recurringSkips[seatNo];
-  return (d && Array.isArray(d.weekdays)) ? d.weekdays : [];
+  if(!d) return [];
+  const key = meal+'Weekdays';
+  // 舊資料相容：改版前只有單一 weekdays 欄位（午晚餐共用），還沒被伙委或
+  // 同學重新設定過的座號，讀不到 lunchWeekdays/dinnerWeekdays 時就沿用舊欄位。
+  if(Array.isArray(d[key])) return d[key];
+  if(Array.isArray(d.weekdays)) return d.weekdays;
+  return [];
 }
-function hasRecurringSkipWeekday(seatNo, wd){
-  return recurringSkipWeekdays(seatNo).includes(wd);
+function hasRecurringSkipWeekday(seatNo, meal, wd){
+  return recurringSkipWeekdays(seatNo, meal).includes(wd);
 }
 function choiceArr(date, meal){
   const m = choiceMap(date, meal);
@@ -1697,8 +1710,6 @@ function renderStudentDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
   const lC=choiceArr(date,'lunch'), dC=choiceArr(date,'dinner');
   const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
-  const wd=dObj.getDay();
-  const recurRow = `<div class="recurring-skip-row"><label class="recurring-skip-check"><input type="checkbox" data-action="toggle-recurring-skip" data-weekday="${wd}" ${hasRecurringSkipWeekday(studentId,wd)?'checked':''}> 以後每週${WD[wd]}都不定餐（自動退餐，當天仍可自行改選葷／素）</label></div>`;
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
@@ -1708,7 +1719,6 @@ function renderStudentDateCard(date){
     <div class="date-body">
       ${renderStudentMealCard(date,'lunch','午餐',e.lunch||{},lC)}
       ${renderStudentMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
-      ${recurRow}
     </div>
   </div>`;
 }
@@ -1725,6 +1735,10 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
   else if(mine && mine._virtual) statusLine='固定不定餐：本次自動退餐（如需訂餐請直接選擇葷食／素食）';
   else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
   else statusLine='尚未選擇';
+  // 固定不定餐現在分午餐／晚餐各自獨立設定，按鈕直接放在對應餐別卡片裡，
+  // 用這一天的星期幾（wd）判斷目前這一餐、這個星期是否已經設定自動退餐。
+  const wd=parseDate(date).getDay();
+  const isRecur=hasRecurringSkipWeekday(studentId, meal, wd);
 
   return `
   <div class="meal-card ${meal}">
@@ -1733,6 +1747,7 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
       <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="meat">葷食</button>
       <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="veg">素食</button>
       <button type="button" class="choice-btn cancel ${status==='cancel'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="cancel">退餐</button>
+      <button type="button" class="choice-btn recur ${isRecur?'active':''}" data-action="toggle-recurring-skip" data-date="${date}" data-meal="${meal}" data-weekday="${wd}" title="設定後，以後每週${WD[wd]}的${label}都會自動退餐，當天仍可自行改選葷／素">以後這天都不定</button>
     </div>
     <div class="submit-row ${dirty?'dirty':''}">
       <span class="submit-status">${escapeHtml(statusLine)}</span>
@@ -2016,6 +2031,22 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     delete draftChoice[key];
     render();
   }
+  else if(action==='toggle-recurring-skip'){
+    // 同學在自己的午餐／晚餐卡片上按「以後這天都不定」，寫入
+    // recurringSkips/{studentId} 的 lunchWeekdays／dinnerWeekdays（依這顆按鈕
+    // 所屬的餐別而定），firestore.rules 只允許本人（isOwnId）或伙委寫入這份文件。
+    const wd=Number(el.dataset.weekday);
+    const cur=new Set(recurringSkipWeekdays(studentId, meal));
+    const willEnable=!cur.has(wd);
+    if(willEnable) cur.add(wd); else cur.delete(wd);
+    const list=Array.from(cur).sort();
+    const payload={ seatNo:studentId, updatedBy:identity(), updatedAt:serverTimestamp() };
+    payload[meal+'Weekdays']=list;
+    await setDoc(doc(db,'recurringSkips',studentId), payload, {merge:true});
+    const mealLabel=meal==='lunch'?'午餐':'晚餐';
+    showToast(willEnable ? '已設定每週'+WD[wd]+mealLabel+'自動退餐' : '已取消每週'+WD[wd]+mealLabel+'自動退餐');
+    await fetchRecurringSkips();
+  }
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
   else if(action==='delete-week'){ ev.stopPropagation(); await deleteWeek(el.dataset.week); }
   else if(action==='copy-prev-day-meal'){ ev.stopPropagation(); await applyPrevDayTo(date, meal); }
@@ -2128,22 +2159,6 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
       paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString(), updatedAt:serverTimestamp()
     });
   }
-  else if(ev.target.dataset.action==='toggle-recurring-skip'){
-    // 同學自己在日期卡片上開關「以後每週這天都不定餐」，寫入
-    // recurringSkips/{studentId}，firestore.rules 只允許本人（isOwnId）或
-    // 伙委寫入這份文件。
-    const wd=Number(ev.target.dataset.weekday);
-    const cur=new Set(recurringSkipWeekdays(studentId));
-    if(ev.target.checked) cur.add(wd); else cur.delete(wd);
-    const weekdays=Array.from(cur).sort();
-    if(weekdays.length){
-      await setDoc(doc(db,'recurringSkips',studentId), { seatNo:studentId, weekdays, updatedBy:identity(), updatedAt:serverTimestamp() }, {merge:true});
-    } else {
-      await deleteDoc(doc(db,'recurringSkips',studentId));
-    }
-    showToast(ev.target.checked ? '已設定每週'+WD[wd]+'自動退餐' : '已取消每週'+WD[wd]+'自動退餐');
-    await fetchRecurringSkips();
-  }
   }catch(err){
     console.error(err);
     showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
@@ -2207,11 +2222,14 @@ document.getElementById('add-coordinator-btn').addEventListener('click', async (
 function renderRecurringSkipList(){
   const el=document.getElementById('recurring-skip-list');
   if(!el) return;
-  const items=Object.entries(recurringSkips).filter(([,d])=>Array.isArray(d.weekdays)&&d.weekdays.length);
+  const items=Object.entries(recurringSkips).filter(([seat])=>
+    recurringSkipWeekdays(seat,'lunch').length || recurringSkipWeekdays(seat,'dinner').length);
   if(items.length===0){ el.innerHTML='<div class="other-label">目前沒有設定固定不定餐</div>'; return; }
-  el.innerHTML = items.map(([seat,data])=>{
-    const wds=(data.weekdays||[]).slice().sort().map(w=>WD[w]).join('、');
-    return `<span class="name-chip">${escapeHtml(seat)}：每週${wds}<button data-remove-recur-seat="${escapeHtml(seat)}">×</button></span>`;
+  el.innerHTML = items.map(([seat])=>{
+    const lw=recurringSkipWeekdays(seat,'lunch').slice().sort().map(w=>WD[w]).join('、');
+    const dw=recurringSkipWeekdays(seat,'dinner').slice().sort().map(w=>WD[w]).join('、');
+    const parts=[]; if(lw) parts.push('午'+lw); if(dw) parts.push('晚'+dw);
+    return `<span class="name-chip">${escapeHtml(seat)}：${parts.join('・')}<button data-remove-recur-seat="${escapeHtml(seat)}">×</button></span>`;
   }).join('');
 }
 document.getElementById('recurring-skip-list').addEventListener('click', async (ev)=>{
@@ -2220,20 +2238,30 @@ document.getElementById('recurring-skip-list').addEventListener('click', async (
   showToast('已移除固定不定餐設定');
   await fetchRecurringSkips();
 });
+document.getElementById('set-recur-seat').addEventListener('change', ()=>{
+  // 輸入座號後自動帶出這個座號目前的設定，避免伙委看不到現況就直接覆蓋掉。
+  const raw=document.getElementById('set-recur-seat').value.trim();
+  if(!raw) return;
+  const seat=normalizeSeatNo(raw);
+  const lw=recurringSkipWeekdays(seat,'lunch'), dw=recurringSkipWeekdays(seat,'dinner');
+  document.querySelectorAll('#recur-weekday-picker-lunch input').forEach(cb=>cb.checked=lw.includes(Number(cb.value)));
+  document.querySelectorAll('#recur-weekday-picker-dinner input').forEach(cb=>cb.checked=dw.includes(Number(cb.value)));
+});
 document.getElementById('set-recurring-skip-btn').addEventListener('click', async ()=>{
   const raw=document.getElementById('set-recur-seat').value.trim();
   if(!raw){ showToast('請輸入座號'); return; }
   const seat=normalizeSeatNo(raw);
-  const checked=Array.from(document.querySelectorAll('#recur-weekday-picker input:checked')).map(cb=>Number(cb.value));
-  if(checked.length){
-    await setDoc(doc(db,'recurringSkips',seat), { seatNo:seat, weekdays:checked, updatedBy:identity(), updatedAt:serverTimestamp() }, {merge:true});
-    showToast('已設定 '+seat+' 固定不定餐（每週'+checked.map(w=>WD[w]).join('、')+'）');
+  const lunchWeekdays=Array.from(document.querySelectorAll('#recur-weekday-picker-lunch input:checked')).map(cb=>Number(cb.value));
+  const dinnerWeekdays=Array.from(document.querySelectorAll('#recur-weekday-picker-dinner input:checked')).map(cb=>Number(cb.value));
+  await setDoc(doc(db,'recurringSkips',seat), { seatNo:seat, lunchWeekdays, dinnerWeekdays, updatedBy:identity(), updatedAt:serverTimestamp() }, {merge:true});
+  if(lunchWeekdays.length || dinnerWeekdays.length){
+    const parts=[]; if(lunchWeekdays.length) parts.push('午餐每週'+lunchWeekdays.map(w=>WD[w]).join('、')); if(dinnerWeekdays.length) parts.push('晚餐每週'+dinnerWeekdays.map(w=>WD[w]).join('、'));
+    showToast('已設定 '+seat+' 固定不定餐（'+parts.join('・')+'）');
   } else {
-    await deleteDoc(doc(db,'recurringSkips',seat));
     showToast('已清空 '+seat+' 的固定不定餐設定');
   }
   document.getElementById('set-recur-seat').value='';
-  document.querySelectorAll('#recur-weekday-picker input').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('#recur-weekday-picker-lunch input, #recur-weekday-picker-dinner input').forEach(cb=>cb.checked=false);
   await fetchRecurringSkips();
 });
 document.getElementById('gear-btn').addEventListener('click',()=>{
