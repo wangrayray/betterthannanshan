@@ -77,7 +77,28 @@
   .notif-panel h3{margin:0 0 4px;font-family:'Zen Maru Gothic',sans-serif;font-size:16px;}
   .notif-panel .sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;}
   .notif-list{display:flex;flex-direction:column;gap:6px;}
-  .notif-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--danger-bg);border-radius:8px;padding:8px 10px;}
+  .notif-row{display:flex;align-items:center;gap:8px;background:var(--danger-bg);border-radius:8px;padding:8px 10px;cursor:pointer;transition:opacity .12s;}
+  .notif-row:hover{opacity:.8;}
+  .notif-row:active{transform:scale(.98);}
+  .notif-row.processed{opacity:.5;}
+  .notif-row.processed .notif-main{text-decoration:line-through;}
+  .notif-check{display:flex;align-items:center;flex-shrink:0;cursor:pointer;}
+  .notif-prev{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;}
+  .notif-prev summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-soft);padding:4px 0;list-style:none;}
+  .notif-prev summary::-webkit-details-marker{display:none;}
+  .notif-prev summary::before{content:'▸ ';}
+  .notif-prev[open] summary::before{content:'▾ ';}
+  .notif-week-group{margin-top:8px;}
+  .notif-week-title{font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:5px;text-transform:uppercase;letter-spacing:.03em;}
+  .notif-week-group .notif-list{gap:6px;}
+  @keyframes jump-flash-kf{
+    0%,100%{ box-shadow:0 0 0 0 rgba(255,210,63,0); }
+    50%{ box-shadow:0 0 0 4px #FFD23F; }
+  }
+  .jump-flash{ animation: jump-flash-kf .5s ease-in-out 5; position:relative; z-index:2; }
+  .recurring-skip-row{font-size:12px;color:var(--ink-soft);padding-top:4px;}
+  .recurring-skip-check{display:flex;align-items:center;gap:6px;cursor:pointer;}
+  .recur-weekday-picker label{display:inline-flex;align-items:center;gap:2px;font-size:12px;margin-right:6px;cursor:pointer;}
   .notif-info{display:flex;flex-direction:column;gap:1px;}
   .notif-main{font-size:13px;font-weight:700;color:var(--danger);}
   .notif-time{font-size:11px;color:var(--ink-soft);}
@@ -342,7 +363,7 @@
 <div class="modal-bg" id="notif-bg">
   <div class="notif-panel">
     <h3>🔔 退餐通知</h3>
-    <div class="sub">列出目前所有「退餐」紀錄（不含訂餐／葷素選擇），依時間最新排序。打開這個視窗會把目前看到的都標記為已讀。</div>
+    <div class="sub">列出目前所有「退餐」紀錄（不含訂餐／葷素選擇），依時間最新排序，點通知可以跳到當天並標示退餐座號；勾選代表你已經處理過這筆。打開這個視窗會把目前看到的都標記為已讀；上週以前的紀錄會收進下方「先前通知」，依週分組存放。</div>
     <div id="notif-list-wrap"></div>
     <div class="notif-close"><button class="btn btn-ghost" id="notif-close-btn">關閉</button></div>
   </div>
@@ -367,6 +388,16 @@
         <button class="btn btn-ghost" id="add-coordinator-btn" type="button">設定</button>
       </div>
       <div class="chips" id="coordinator-list" style="margin-top:8px;"></div>
+    </div>
+    <div class="row">
+      <label>固定不定餐（每週這幾天自動退餐，座號需在名冊內）</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <input type="text" id="set-recur-seat" placeholder="座號" style="width:70px;">
+        <span class="recur-weekday-picker" id="recur-weekday-picker"><label><input type="checkbox" value="0">日</label><label><input type="checkbox" value="1">一</label><label><input type="checkbox" value="2">二</label><label><input type="checkbox" value="3">三</label><label><input type="checkbox" value="4">四</label><label><input type="checkbox" value="5">五</label><label><input type="checkbox" value="6">六</label></span>
+        <button class="btn btn-ghost" id="set-recurring-skip-btn" type="button">設定</button>
+      </div>
+      <div class="sub" style="margin:6px 0 0;">勾選的星期會覆蓋這個座號目前的固定退餐設定；同學也可以在自己的退餐紀錄卡片上自行開關。</div>
+      <div class="chips" id="recurring-skip-list" style="margin-top:8px;"></div>
     </div>
     <div class="row">
       <label>資料搬移（一次性工具）</label>
@@ -483,6 +514,7 @@ const WD = ['日','一','二','三','四','五','六'];
 const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐'};
 const MEAL_LABEL = {lunch:'午餐', dinner:'晚餐'};
 const NOTIF_SEEN_KEY = 'cancelNotifLastSeen';
+const NOTIF_PROCESSED_KEY = 'cancelNotifProcessed';
 // updatedAt 欄位現在改用 Firestore serverTimestamp()（安全性：防止有人直接用
 // SDK 偽造送出時間，見下方 firestore.rules 的 request.time 檢查），讀出來的
 // 型別會是 Firestore Timestamp 物件（有 .toMillis()），不是字串。舊資料（規則
@@ -502,7 +534,32 @@ function tsMillis(v){
 // 點餐資料，不直接碰 entries[date].lunch.choices 的巢狀結構。
 // ============================================================
 function choiceMap(date, meal){
-  return (entries[date] && entries[date][meal] && entries[date][meal].choices) || {};
+  const base = (entries[date] && entries[date][meal] && entries[date][meal].choices) || {};
+  // 固定不定餐：某座號設定了「每週這幾天都不定餐」，只要當天還沒有真正的
+  // 選擇紀錄（沒被本人或伙委手動改過），就在讀取層「虛擬」補上一筆退餐，
+  // 顯示、統計、通知都會照一般退餐處理；一旦有真正的紀錄寫進 Firestore，
+  // 就以真正的紀錄為準（見下方 !merged[seat] 判斷），本人隨時可以在那一天
+  // 另外選擇葷/素來覆蓋掉這次的自動退餐。
+  const weekdays = Object.keys(recurringSkips);
+  if(!weekdays.length) return base;
+  const wd = parseDate(date).getDay();
+  const skipSeats = weekdays.filter(seat=>hasRecurringSkipWeekday(seat, wd));
+  if(!skipSeats.length) return base;
+  const merged = Object.assign({}, base);
+  skipSeats.forEach(seat=>{
+    if(!merged[seat]){
+      merged[seat] = { seatNo:seat, studentId:seat, name:seat, status:'cancel', note:'', _virtual:true,
+        updatedAt: (recurringSkips[seat]&&recurringSkips[seat].updatedAt) || null };
+    }
+  });
+  return merged;
+}
+function recurringSkipWeekdays(seatNo){
+  const d=recurringSkips[seatNo];
+  return (d && Array.isArray(d.weekdays)) ? d.weekdays : [];
+}
+function hasRecurringSkipWeekday(seatNo, wd){
+  return recurringSkipWeekdays(seatNo).includes(wd);
 }
 function choiceArr(date, meal){
   const m = choiceMap(date, meal);
@@ -519,7 +576,7 @@ function computeCancelNotifications(){
   Object.keys(entries).forEach(date=>{
     ['lunch','dinner'].forEach(meal=>{
       choiceArr(date, meal).forEach(c=>{
-        if(c.status==='cancel'){
+        if(c.status==='cancel' && !c._virtual){
           list.push({
             key: date+'|'+meal+'|'+c.id,
             date, meal,
@@ -539,6 +596,20 @@ function getNotifLastSeen(){
 function setNotifLastSeen(ms){
   try{ localStorage.setItem(NOTIF_SEEN_KEY, String(ms)); }catch(e){}
 }
+// 「已處理」是伙委端 UI 上的輔助勾選，純粹用來提醒自己這筆退餐已經處理過
+// （例如已經跟廚房喬好退費），不影響底層退餐紀錄本身，所以存在瀏覽器
+// localStorage 就好，不用寫回 Firestore（每個伙委各自記錄自己看過哪些）。
+function getNotifProcessedSet(){
+  try{ return new Set(JSON.parse(localStorage.getItem(NOTIF_PROCESSED_KEY)||'[]')); }catch(e){ return new Set(); }
+}
+function isNotifProcessed(key){
+  return getNotifProcessedSet().has(key);
+}
+function setNotifProcessed(key, val){
+  const s=getNotifProcessedSet();
+  if(val) s.add(key); else s.delete(key);
+  try{ localStorage.setItem(NOTIF_PROCESSED_KEY, JSON.stringify(Array.from(s))); }catch(e){}
+}
 function updateBellBadge(){
   const badge=document.getElementById('bell-badge');
   if(!badge) return;
@@ -548,22 +619,77 @@ function updateBellBadge(){
   badge.textContent = unread>99 ? '99+' : String(unread);
   badge.classList.toggle('show', unread>0);
 }
+function renderNotifRow(n){
+  const processed = isNotifProcessed(n.key);
+  return `
+      <div class="notif-row ${processed?'processed':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
+        <label class="notif-check" title="標記為已處理"><input type="checkbox" data-action="toggle-notif-processed" data-key="${escapeHtml(n.key)}" ${processed?'checked':''}></label>
+        <div class="notif-info">
+          <span class="notif-main">${escapeHtml(n.date)}・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} 退餐</span>
+          <span class="notif-time">${n.updatedAtMs ? new Date(n.updatedAtMs).toLocaleString('zh-TW') : ''}</span>
+        </div>
+      </div>`;
+}
 function renderNotifPanel(){
   const list=computeCancelNotifications();
   const wrap=document.getElementById('notif-list-wrap');
-  wrap.innerHTML = list.length ? `
-    <div class="notif-list">
-      ${list.map(n=>`
-        <div class="notif-row">
-          <div class="notif-info">
-            <span class="notif-main">${escapeHtml(n.date)}・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} 退餐</span>
-            <span class="notif-time">${n.updatedAtMs ? new Date(n.updatedAtMs).toLocaleString('zh-TW') : ''}</span>
-          </div>
+  if(!list.length){
+    wrap.innerHTML = `<div class="empty-state">目前沒有任何退餐紀錄</div>`;
+    setNotifLastSeen(Date.now());
+    updateBellBadge();
+    return;
+  }
+  // 按「週」分組：本週（含未來週）維持攤平顯示，上週以前的收進「先前通知」
+  // 摺疊區塊，因為訂餐是訂隔週的，一旦週次換了，上一週的退餐紀錄就變成歷史
+  // 資料，不需要再放在最上層提醒伙委。
+  const curWeek = weekKey(todayStr());
+  const current = list.filter(n=>weekKey(n.date) >= curWeek);
+  const previous = list.filter(n=>weekKey(n.date) < curWeek);
+  let html = current.length
+    ? `<div class="notif-list">${current.map(renderNotifRow).join('')}</div>`
+    : `<div class="empty-state">本週沒有任何退餐紀錄</div>`;
+  if(previous.length){
+    const weeks={};
+    previous.forEach(n=>{ const wk=weekKey(n.date); (weeks[wk]=weeks[wk]||[]).push(n); });
+    const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
+    html += `
+    <details class="notif-prev">
+      <summary>先前通知（${previous.length}）</summary>
+      ${weekKeys.map(wk=>`
+        <div class="notif-week-group">
+          <div class="notif-week-title">${weekLabel(wk)}</div>
+          <div class="notif-list">${weeks[wk].map(renderNotifRow).join('')}</div>
         </div>`).join('')}
-    </div>` : `<div class="empty-state">目前沒有任何退餐紀錄</div>`;
+    </details>`;
+  }
+  wrap.innerHTML = html;
   // 標記為已讀：用目前列表中最新的一筆時間當作「已看過」的分界點
-  setNotifLastSeen(list.length ? list[0].updatedAtMs : Date.now());
+  setNotifLastSeen(list[0].updatedAtMs);
   updateBellBadge();
+}
+function jumpToCancelEntry(date, meal, label){
+  document.getElementById('notif-bg').classList.remove('show');
+  if(activeTab!=='meal'){
+    activeTab='meal';
+    document.getElementById('tab-meal-btn').classList.add('active');
+    document.getElementById('tab-event-btn').classList.remove('active');
+  }
+  collapsedDates.delete(date);
+  render();
+  setTimeout(()=>{
+    const card=document.querySelector(`.date-card[data-datecard="${date}"]`);
+    if(!card){ showToast('找不到這筆紀錄的日期卡片，可能已被刪除'); return; }
+    card.scrollIntoView({behavior:'smooth', block:'center'});
+    const candidates=document.querySelectorAll(`[data-action="cycle-status"][data-date="${date}"][data-meal="${meal}"]`);
+    let cell=null;
+    candidates.forEach(c=>{ if(c.dataset.label===label) cell=c; });
+    if(cell){
+      cell.classList.remove('jump-flash');
+      void cell.offsetWidth;
+      cell.classList.add('jump-flash');
+      cell.addEventListener('animationend', ()=>cell.classList.remove('jump-flash'), {once:true});
+    }
+  }, 260);
 }
 let entries = {};      // date -> {date,lunch:{choices:{}},dinner:{choices:{}},lastEditBy,lastEditAt,note}
 let events = {};        // id -> {id,title,createdAt,createdBy,lastEditBy,lastEditAt}
@@ -580,6 +706,7 @@ let settings = { rosterSize:49, includeTeacher:true };
 let studentsRoster = {}; // studentId -> {name}
 let staffList = {};      // email -> {name}
 let eventCoordinators = {}; // seatNo -> {expiresAt,grantedBy,grantedAt}
+let recurringSkips = {}; // seatNo -> {weekdays:[0-6], updatedBy, updatedAt} 固定不定餐：每週這幾天自動退餐
 let draftChoice = {};    // "date|meal" -> {status,note}  同學按選項時的本機暫存，按「確定送出」才會真的寫入 Firestore
 
 let collapsedDates = new Set();
@@ -921,7 +1048,7 @@ function teardownState(){
   teardownListeners();
   entries={}; events={}; eventMenu={}; eventOrders={};
   eventRecommendations={};
-  studentsRoster={}; staffList={}; eventCoordinators={}; draftChoice={}; staffDraft={};
+  studentsRoster={}; staffList={}; eventCoordinators={}; recurringSkips={}; draftChoice={}; staffDraft={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
   defaultedCollapseDates=new Set();
@@ -995,6 +1122,14 @@ async function fetchEventCoordinators(){
     render();
   }catch(err){ subErr('eventCoordinators')(err); }
 }
+async function fetchRecurringSkips(){
+  try{
+    const snap = await getDocs(collection(db,'recurringSkips'));
+    recurringSkips={}; snap.forEach(d=>recurringSkips[d.id]=d.data());
+    renderRecurringSkipList();
+    render();
+  }catch(err){ subErr('recurringSkips')(err); }
+}
 async function fetchEventMenu(){
   try{
     const snap = await getDocs(collectionGroup(db,'menu'));
@@ -1018,6 +1153,7 @@ function subscribeAll(){
   fetchStudentsRoster();
   fetchStaffList();
   fetchEventCoordinators();
+  fetchRecurringSkips();
   fetchEventMenu();
 
   unsubs.push(onSnapshot(collection(db,'entries'), snap=>{
@@ -1561,6 +1697,8 @@ function renderStudentDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
   const lC=choiceArr(date,'lunch'), dC=choiceArr(date,'dinner');
   const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
+  const wd=dObj.getDay();
+  const recurRow = `<div class="recurring-skip-row"><label class="recurring-skip-check"><input type="checkbox" data-action="toggle-recurring-skip" data-weekday="${wd}" ${hasRecurringSkipWeekday(studentId,wd)?'checked':''}> 以後每週${WD[wd]}都不定餐（自動退餐，當天仍可自行改選葷／素）</label></div>`;
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
@@ -1570,6 +1708,7 @@ function renderStudentDateCard(date){
     <div class="date-body">
       ${renderStudentMealCard(date,'lunch','午餐',e.lunch||{},lC)}
       ${renderStudentMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
+      ${recurRow}
     </div>
   </div>`;
 }
@@ -1583,6 +1722,7 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
   const status=dirty?draft.status:savedStatus;
   let statusLine;
   if(dirty) statusLine='已選擇「'+(STATUS_LABEL[status]||'取消選擇')+'」，尚未送出（僅暫存於本機）';
+  else if(mine && mine._virtual) statusLine='固定不定餐：本次自動退餐（如需訂餐請直接選擇葷食／素食）';
   else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
   else statusLine='尚未選擇';
 
@@ -1791,7 +1931,10 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const order=['meat','veg','cancel',null];
     const key=date+'|'+meal+'|'+label;
     const live=choiceMap(date, meal)[label];
-    const liveStatus=live?live.status:null;
+    // 固定不定餐虛擬補上的退餐（_virtual）不是真正寫進 Firestore 的紀錄，
+    // 讀取當下狀態時當作「尚未選擇」處理，這樣伙委點一下就能正常從虛擬退餐
+    // 切換成葷/素，等於幫這一天手動覆蓋掉自動退餐。
+    const liveStatus=(live && !live._virtual)?live.status:null;
     const d=staffDraft[key];
     const current = d ? d.next : liveStatus;
     const baseline = d ? d.baseline : liveStatus;
@@ -1815,7 +1958,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     pendingKeys.forEach(k=>{
       const p=staffDraft[k];
       const live=choiceMap(p.date,p.meal)[p.label];
-      const liveStatus=live?live.status:null;
+      const liveStatus=(live && !live._virtual)?live.status:null;
       if(liveStatus!==p.baseline){ conflicts.push(p); return; }
       const path=p.meal+'.choices.'+p.label;
       fieldUpdates[path] = p.next===null ? deleteField() : {
@@ -1845,7 +1988,9 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const status=el.dataset.status;
     const key=date+'|'+meal;
     const existing=choiceMap(date, meal)[studentId];
-    const savedStatus = existing?existing.status:'';
+    // 固定不定餐虛擬補上的退餐（_virtual）視為「尚未選擇」，這樣同學點葷/素
+    // 就能正常覆蓋掉這一天的自動退餐（覆蓋只影響這一天，不會動到每週設定）。
+    const savedStatus = (existing && !existing._virtual)?existing.status:'';
     const current = draftChoice[key] ? draftChoice[key].status : savedStatus;
     const newStatus = current===status ? '' : status; // 再點一次同一個 = 取消選擇
     if(newStatus===savedStatus){ delete draftChoice[key]; } else { draftChoice[key] = {status:newStatus}; }
@@ -1854,7 +1999,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   else if(action==='submit-choice'){
     const key=date+'|'+meal;
     const existing=choiceMap(date, meal)[studentId];
-    const savedStatus = existing?existing.status:'';
+    const savedStatus = (existing && !existing._virtual)?existing.status:'';
     const draft=draftChoice[key];
     const status = draft ? draft.status : savedStatus;
     const path=meal+'.choices.'+studentId;
@@ -1983,6 +2128,22 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
       paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString(), updatedAt:serverTimestamp()
     });
   }
+  else if(ev.target.dataset.action==='toggle-recurring-skip'){
+    // 同學自己在日期卡片上開關「以後每週這天都不定餐」，寫入
+    // recurringSkips/{studentId}，firestore.rules 只允許本人（isOwnId）或
+    // 伙委寫入這份文件。
+    const wd=Number(ev.target.dataset.weekday);
+    const cur=new Set(recurringSkipWeekdays(studentId));
+    if(ev.target.checked) cur.add(wd); else cur.delete(wd);
+    const weekdays=Array.from(cur).sort();
+    if(weekdays.length){
+      await setDoc(doc(db,'recurringSkips',studentId), { seatNo:studentId, weekdays, updatedBy:identity(), updatedAt:serverTimestamp() }, {merge:true});
+    } else {
+      await deleteDoc(doc(db,'recurringSkips',studentId));
+    }
+    showToast(ev.target.checked ? '已設定每週'+WD[wd]+'自動退餐' : '已取消每週'+WD[wd]+'自動退餐');
+    await fetchRecurringSkips();
+  }
   }catch(err){
     console.error(err);
     showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
@@ -2040,21 +2201,70 @@ document.getElementById('add-coordinator-btn').addEventListener('click', async (
   document.getElementById('set-coordinator-seat').value='';
   showToast('已設定為外食訂購人，'+COORDINATOR_DAYS+' 天後自動失效');
 });
+
+// settings：固定不定餐（伙委可以幫任何座號設定；同學也能在自己的日期卡片上
+// 直接勾選，寫入同一份 recurringSkips/{seatNo} 文件，見 firestore.rules）
+function renderRecurringSkipList(){
+  const el=document.getElementById('recurring-skip-list');
+  if(!el) return;
+  const items=Object.entries(recurringSkips).filter(([,d])=>Array.isArray(d.weekdays)&&d.weekdays.length);
+  if(items.length===0){ el.innerHTML='<div class="other-label">目前沒有設定固定不定餐</div>'; return; }
+  el.innerHTML = items.map(([seat,data])=>{
+    const wds=(data.weekdays||[]).slice().sort().map(w=>WD[w]).join('、');
+    return `<span class="name-chip">${escapeHtml(seat)}：每週${wds}<button data-remove-recur-seat="${escapeHtml(seat)}">×</button></span>`;
+  }).join('');
+}
+document.getElementById('recurring-skip-list').addEventListener('click', async (ev)=>{
+  const btn=ev.target.closest('[data-remove-recur-seat]'); if(!btn) return;
+  await deleteDoc(doc(db,'recurringSkips',btn.dataset.removeRecurSeat));
+  showToast('已移除固定不定餐設定');
+  await fetchRecurringSkips();
+});
+document.getElementById('set-recurring-skip-btn').addEventListener('click', async ()=>{
+  const raw=document.getElementById('set-recur-seat').value.trim();
+  if(!raw){ showToast('請輸入座號'); return; }
+  const seat=normalizeSeatNo(raw);
+  const checked=Array.from(document.querySelectorAll('#recur-weekday-picker input:checked')).map(cb=>Number(cb.value));
+  if(checked.length){
+    await setDoc(doc(db,'recurringSkips',seat), { seatNo:seat, weekdays:checked, updatedBy:identity(), updatedAt:serverTimestamp() }, {merge:true});
+    showToast('已設定 '+seat+' 固定不定餐（每週'+checked.map(w=>WD[w]).join('、')+'）');
+  } else {
+    await deleteDoc(doc(db,'recurringSkips',seat));
+    showToast('已清空 '+seat+' 的固定不定餐設定');
+  }
+  document.getElementById('set-recur-seat').value='';
+  document.querySelectorAll('#recur-weekday-picker input').forEach(cb=>cb.checked=false);
+  await fetchRecurringSkips();
+});
 document.getElementById('gear-btn').addEventListener('click',()=>{
   document.getElementById('set-roster').value=settings.rosterSize;
   document.getElementById('set-teacher').checked=settings.includeTeacher;
   renderCoordinatorList();
+  renderRecurringSkipList();
   document.getElementById('settings-bg').classList.add('show');
-  // 名冊／伙委／外食訂購人改成一次性讀取，打開設定面板時主動重新整理一次，
-  // 確保看到的是最新資料（不然可能是登入當下那一刻的舊快照）。
+  // 名冊／伙委／外食訂購人／固定不定餐改成一次性讀取，打開設定面板時主動
+  // 重新整理一次，確保看到的是最新資料（不然可能是登入當下那一刻的舊快照）。
   fetchStudentsRoster();
   fetchStaffList();
   fetchEventCoordinators();
+  fetchRecurringSkips();
 });
 
 document.getElementById('bell-btn').addEventListener('click',()=>{
   renderNotifPanel();
   document.getElementById('notif-bg').classList.add('show');
+});
+document.getElementById('notif-list-wrap').addEventListener('click', (ev)=>{
+  const checkEl = ev.target.closest('[data-action="toggle-notif-processed"]');
+  if(checkEl){
+    ev.stopPropagation();
+    setNotifProcessed(checkEl.dataset.key, checkEl.checked);
+    const row = checkEl.closest('.notif-row');
+    if(row) row.classList.toggle('processed', checkEl.checked);
+    return;
+  }
+  const el=ev.target.closest('[data-action="jump-notif"]'); if(!el) return;
+  jumpToCancelEntry(el.dataset.date, el.dataset.meal, el.dataset.label);
 });
 document.getElementById('notif-close-btn').addEventListener('click',()=>{
   document.getElementById('notif-bg').classList.remove('show');
