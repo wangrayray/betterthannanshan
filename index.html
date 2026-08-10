@@ -193,6 +193,7 @@
   .meal-card.dinner .number-cell.meat{background:var(--dinner);color:#fff;}
   .number-cell.veg{background:var(--mine);color:#fff;}
   .number-cell.cancel{background:var(--paper);color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
+  .number-cell.recur{background:var(--paper);color:var(--outside);border:1px dashed var(--outside);}
   .number-cell.pending{outline:2px dashed var(--outside);outline-offset:1px;}
   .pending-bar{margin:0 0 10px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--outside-bg);border:1px dashed var(--outside);border-radius:10px;font-size:12.5px;color:var(--outside);}
   .pending-bar b{font-size:13px;}
@@ -365,7 +366,7 @@
 <div class="modal-bg" id="notif-bg">
   <div class="notif-panel">
     <h3>🔔 退餐通知</h3>
-    <div class="sub">列出目前所有「退餐」紀錄（不含訂餐／葷素選擇），依時間最新排序，點通知可以跳到當天並標示退餐座號；勾選代表你已經處理過這筆。打開這個視窗會把目前看到的都標記為已讀；上週以前的紀錄會收進下方「先前通知」，依週分組存放。</div>
+    <div class="sub">列出目前所有「退餐」紀錄（不含訂餐／葷素選擇），依時間最新排序，點通知可以跳到當天並標示退餐座號；勾選代表已經處理過這筆（所有伙委共用同一份資料，任何人勾選後大家都看得到）。打開這個視窗會把目前看到的都標記為已讀（已讀狀態只存在你自己的裝置上）；上週以前的紀錄會收進下方「先前通知」，依週分組存放。</div>
     <div id="notif-list-wrap"></div>
     <div class="notif-close"><button class="btn btn-ghost" id="notif-close-btn">關閉</button></div>
   </div>
@@ -518,10 +519,9 @@ const db = initializeFirestore(app, {
 // 狀態
 // ============================================================
 const WD = ['日','一','二','三','四','五','六'];
-const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐'};
+const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐', recur:'以後不定'};
 const MEAL_LABEL = {lunch:'午餐', dinner:'晚餐'};
 const NOTIF_SEEN_KEY = 'cancelNotifLastSeen';
-const NOTIF_PROCESSED_KEY = 'cancelNotifProcessed';
 // updatedAt 欄位現在改用 Firestore serverTimestamp()（安全性：防止有人直接用
 // SDK 偽造送出時間，見下方 firestore.rules 的 request.time 檢查），讀出來的
 // 型別會是 Firestore Timestamp 物件（有 .toMillis()），不是字串。舊資料（規則
@@ -594,7 +594,8 @@ function computeCancelNotifications(){
             key: date+'|'+meal+'|'+c.id,
             date, meal,
             label: c.seatNo || c.name || c.id,
-            updatedAtMs: tsMillis(c.updatedAt)
+            updatedAtMs: tsMillis(c.updatedAt),
+            processed: !!c.processed
           });
         }
       });
@@ -609,20 +610,9 @@ function getNotifLastSeen(){
 function setNotifLastSeen(ms){
   try{ localStorage.setItem(NOTIF_SEEN_KEY, String(ms)); }catch(e){}
 }
-// 「已處理」是伙委端 UI 上的輔助勾選，純粹用來提醒自己這筆退餐已經處理過
-// （例如已經跟廚房喬好退費），不影響底層退餐紀錄本身，所以存在瀏覽器
-// localStorage 就好，不用寫回 Firestore（每個伙委各自記錄自己看過哪些）。
-function getNotifProcessedSet(){
-  try{ return new Set(JSON.parse(localStorage.getItem(NOTIF_PROCESSED_KEY)||'[]')); }catch(e){ return new Set(); }
-}
-function isNotifProcessed(key){
-  return getNotifProcessedSet().has(key);
-}
-function setNotifProcessed(key, val){
-  const s=getNotifProcessedSet();
-  if(val) s.add(key); else s.delete(key);
-  try{ localStorage.setItem(NOTIF_PROCESSED_KEY, JSON.stringify(Array.from(s))); }catch(e){}
-}
+// 「已處理」勾選現在直接寫回 Firestore（存在該筆退餐紀錄自己的 processed
+// 欄位裡），所有伙委共用同一份資料，任何人勾選後，其他伙委重新整理／即時
+// 監聽都會看到同樣的勾選狀態，不再只存在單一瀏覽器的 localStorage 裡。
 function updateBellBadge(){
   const badge=document.getElementById('bell-badge');
   if(!badge) return;
@@ -633,10 +623,10 @@ function updateBellBadge(){
   badge.classList.toggle('show', unread>0);
 }
 function renderNotifRow(n){
-  const processed = isNotifProcessed(n.key);
+  const processed = !!n.processed;
   return `
       <div class="notif-row ${processed?'processed':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
-        <label class="notif-check" title="標記為已處理"><input type="checkbox" data-action="toggle-notif-processed" data-key="${escapeHtml(n.key)}" ${processed?'checked':''}></label>
+        <label class="notif-check" title="標記為已處理（所有伙委共用）"><input type="checkbox" data-action="toggle-notif-processed" data-key="${escapeHtml(n.key)}" ${processed?'checked':''}></label>
         <div class="notif-info">
           <span class="notif-main">${escapeHtml(n.date)}・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} 退餐</span>
           <span class="notif-time">${n.updatedAtMs ? new Date(n.updatedAtMs).toLocaleString('zh-TW') : ''}</span>
@@ -1243,11 +1233,25 @@ async function applyLastWeekMealTo(dateStr, meal){
   showToast('已套用上週同星期的'+label+'資料');
 }
 async function copyMealBetweenDates(fromKey, toDateStr, meal){
+  // 複製上一次的紀錄到新的一天／一週時：
+  // ・葷食／素食：正常複製過去。
+  // ・退餐：不直接複製退餐，改成複製「退餐前」記錄的葷／素選擇（prevStatus）；
+  //   如果找不到退餐前的紀錄（例如從一開始就是退餐，沒訂過），這一格留白，
+  //   交給本人或伙委重新決定，不會一直延續退餐狀態。
+  // ・以後這天都不定（recur）：不複製，這一格留白，需要重新決定，
+  //   不會自動變成任何一種狀態——這正是這個選項存在的目的。
   const src = choiceMap(fromKey, meal);
   const fieldUpdates = {};
   Object.keys(src).forEach(id=>{
     const o = src[id];
-    fieldUpdates[meal+'.choices.'+id] = {seatNo:o.seatNo||id, studentId:o.studentId||id, name:o.name||id, status:o.status, note:o.note||'', updatedBy:identity(), updatedAt:serverTimestamp()};
+    let nextStatus = o.status;
+    if(o.status==='cancel'){
+      if(o.prevStatus==='meat' || o.prevStatus==='veg') nextStatus = o.prevStatus;
+      else return; // 找不到退餐前的紀錄，留白
+    } else if(o.status==='recur'){
+      return; // 以後這天都不定：留白，不延續
+    }
+    fieldUpdates[meal+'.choices.'+id] = {seatNo:o.seatNo||id, studentId:o.studentId||id, name:o.name||id, status:nextStatus, prevStatus:null, note:o.note||'', updatedBy:identity(), updatedAt:serverTimestamp()};
   });
   fieldUpdates.lastEditBy=identity();
   fieldUpdates.lastEditAt=new Date().toISOString();
@@ -1315,13 +1319,14 @@ function mealCounts(choiceList){
   const meat=list.filter(c=>c.status==='meat').length;
   const veg=list.filter(c=>c.status==='veg').length;
   const cancel=list.filter(c=>c.status==='cancel').length;
+  const recur=list.filter(c=>c.status==='recur').length;
   const chosenRoster=list.filter(c=>roster.includes(c.id)).length;
   const unset=Math.max(0, roster.length-chosenRoster);
-  return {meat,veg,cancel,unset,ordered:meat+veg};
+  return {meat,veg,cancel,recur,unset,ordered:meat+veg};
 }
 function mealSummaryText(choiceList){
   const c=mealCounts(choiceList);
-  return '訂'+c.ordered+'（葷'+c.meat+'／素'+c.veg+'）・退'+c.cancel+'・未選'+c.unset;
+  return '訂'+c.ordered+'（葷'+c.meat+'／素'+c.veg+'）・退'+c.cancel+(c.recur?'・不定'+c.recur:'')+'・未選'+c.unset;
 }
 // 伙委端「批次送出」：把本機 staffDraft 疊加在 Firestore 目前已同步的資料上，
 // 讓畫面看到的是「已送出 + 尚未送出但已經在本機暫存」的合併結果，送出前後的
@@ -1692,14 +1697,16 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
   const notesList=choiceList.filter(c=>c.note);
   const unsetSeats=roster.filter(lab=>!choiceList.some(c=>c.id===lab));
   const cancelSeats=roster.filter(lab=>{ const c=choiceList.find(x=>x.id===lab); return c && c.status==='cancel'; });
+  const recurSeats=roster.filter(lab=>{ const c=choiceList.find(x=>x.id===lab); return c && c.status==='recur'; });
   return `
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
-    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人・尚未選擇 <b>${counts.unset}</b> 人</div>
-    <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 未選）</div>
+    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人${counts.recur?`・不定 <b>${counts.recur}</b> 人`:''}・尚未選擇 <b>${counts.unset}</b> 人</div>
+    <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 以後不定 → 未選）</div>
     <div class="number-grid">${grid}</div>
     ${unsetSeats.length?`<div class="pending-note" style="margin:0 0 8px;">尚未選擇（${unsetSeats.length}）：${unsetSeats.map(escapeHtml).join('、')}</div>`:''}
     ${cancelSeats.length?`<div class="other-label">退餐：${cancelSeats.map(escapeHtml).join('、')}</div>`:''}
+    ${recurSeats.length?`<div class="other-label">以後不定（下次建立新的一週時會留白，需重新決定）：${recurSeats.map(escapeHtml).join('、')}</div>`:''}
     ${others.length?`<div class="other-label">其他（非座號名單，點擊姓名可切換狀態）</div><div class="chips">${others.map(c=>`<span class="name-chip" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${c.id}">${escapeHtml(c.name||c.id)}・${STATUS_LABEL[c.status]||'未選'}<button data-action="remove-choice" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
     <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
     ${notesList.length?`<div class="other-label">備註</div><div class="chips">${notesList.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}：${escapeHtml(c.note)}<button data-action="clear-note" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
@@ -1735,10 +1742,6 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
   else if(mine && mine._virtual) statusLine='固定不定餐：本次自動退餐（如需訂餐請直接選擇葷食／素食）';
   else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
   else statusLine='尚未選擇';
-  // 固定不定餐現在分午餐／晚餐各自獨立設定，按鈕直接放在對應餐別卡片裡，
-  // 用這一天的星期幾（wd）判斷目前這一餐、這個星期是否已經設定自動退餐。
-  const wd=parseDate(date).getDay();
-  const isRecur=hasRecurringSkipWeekday(studentId, meal, wd);
 
   return `
   <div class="meal-card ${meal}">
@@ -1747,7 +1750,7 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
       <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="meat">葷食</button>
       <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="veg">素食</button>
       <button type="button" class="choice-btn cancel ${status==='cancel'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="cancel">退餐</button>
-      <button type="button" class="choice-btn recur ${isRecur?'active':''}" data-action="toggle-recurring-skip" data-date="${date}" data-meal="${meal}" data-weekday="${wd}" title="設定後，以後每週${WD[wd]}的${label}都會自動退餐，當天仍可自行改選葷／素">以後這天都不定</button>
+      <button type="button" class="choice-btn recur ${status==='recur'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="recur" title="選這個代表這一餐先不決定；之後伙委開新的一週時，這一天會保持空白，需要你重新決定，不會自動延續成任何一種選擇">以後這天都不定</button>
     </div>
     <div class="submit-row ${dirty?'dirty':''}">
       <span class="submit-status">${escapeHtml(statusLine)}</span>
@@ -1942,22 +1945,25 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     // Firestore，畫面用 mergedStaffChoiceArr() 疊加顯示暫存效果。要等按下這
     // 一天的「送出這天的異動」才會真的一次寫入，同一份文件的多筆異動合併成
     // 一次 updateDoc，避免每點一下就打一次 Firestore。
+    // 循環順序加入「以後這天都不定」（recur），跟同學端的四個選項一致。
     const label=el.dataset.label;
-    const order=['meat','veg','cancel',null];
+    const order=['meat','veg','cancel','recur',null];
     const key=date+'|'+meal+'|'+label;
     const live=choiceMap(date, meal)[label];
     // 固定不定餐虛擬補上的退餐（_virtual）不是真正寫進 Firestore 的紀錄，
     // 讀取當下狀態時當作「尚未選擇」處理，這樣伙委點一下就能正常從虛擬退餐
     // 切換成葷/素，等於幫這一天手動覆蓋掉自動退餐。
     const liveStatus=(live && !live._virtual)?live.status:null;
+    const livePrevStatus=(live && !live._virtual)?(live.prevStatus||null):null;
     const d=staffDraft[key];
     const current = d ? d.next : liveStatus;
     const baseline = d ? d.baseline : liveStatus;
+    const basePrevStatus = d ? d.basePrevStatus : livePrevStatus;
     const idx=order.indexOf(current);
     const next=order[(idx+1)%order.length];
     if(next===baseline){ delete staffDraft[key]; }
     else{
-      staffDraft[key] = { date, meal, label, baseline, next,
+      staffDraft[key] = { date, meal, label, baseline, basePrevStatus, next,
         name: live?(live.name||label):label, note: live?(live.note||''):'' };
     }
     render();
@@ -1976,8 +1982,14 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
       const liveStatus=(live && !live._virtual)?live.status:null;
       if(liveStatus!==p.baseline){ conflicts.push(p); return; }
       const path=p.meal+'.choices.'+p.label;
+      // 記住「退餐前」的狀態（葷/素），供之後開新的一週時恢復用（見 copyMealBetweenDates）。
+      let prevStatus=null;
+      if(p.next==='cancel'){
+        if(p.baseline==='meat'||p.baseline==='veg') prevStatus=p.baseline;
+        else if(p.baseline==='cancel') prevStatus=p.basePrevStatus||null;
+      }
       fieldUpdates[path] = p.next===null ? deleteField() : {
-        seatNo:p.label, studentId:p.label, name:p.name||p.label, status:p.next, note:p.note||'',
+        seatNo:p.label, studentId:p.label, name:p.name||p.label, status:p.next, prevStatus, note:p.note||'',
         updatedBy:identity(), updatedAt:serverTimestamp()
       };
       applied.push(k);
@@ -2014,7 +2026,8 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   else if(action==='submit-choice'){
     const key=date+'|'+meal;
     const existing=choiceMap(date, meal)[studentId];
-    const savedStatus = (existing && !existing._virtual)?existing.status:'';
+    const existingReal = (existing && !existing._virtual) ? existing : null;
+    const savedStatus = existingReal ? existingReal.status : '';
     const draft=draftChoice[key];
     const status = draft ? draft.status : savedStatus;
     const path=meal+'.choices.'+studentId;
@@ -2022,30 +2035,22 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
       await updateDoc(doc(db,'entries',date), { [path]: deleteField() });
       showToast('已送出：取消訂餐選擇');
     } else {
+      // 記住「退餐前」的狀態（葷/素），之後伙委開新的一週時，會用這個欄位
+      // 幫這個人恢復成退餐前的選擇，而不是繼續延續退餐（見 copyMealBetweenDates）。
+      let prevStatus=null;
+      if(status==='cancel'){
+        const es=existingReal?existingReal.status:'';
+        if(es==='meat'||es==='veg') prevStatus=es;
+        else if(es==='cancel') prevStatus=(existingReal&&existingReal.prevStatus)||null;
+      }
       await updateDoc(doc(db,'entries',date), { [path]: {
-        seatNo:studentId, studentId, name:studentId, status,
+        seatNo:studentId, studentId, name:studentId, status, prevStatus,
         updatedBy:identity(), updatedAt:serverTimestamp()
       }});
       showToast('已送出：'+(STATUS_LABEL[status]||''));
     }
     delete draftChoice[key];
     render();
-  }
-  else if(action==='toggle-recurring-skip'){
-    // 同學在自己的午餐／晚餐卡片上按「以後這天都不定」，寫入
-    // recurringSkips/{studentId} 的 lunchWeekdays／dinnerWeekdays（依這顆按鈕
-    // 所屬的餐別而定），firestore.rules 只允許本人（isOwnId）或伙委寫入這份文件。
-    const wd=Number(el.dataset.weekday);
-    const cur=new Set(recurringSkipWeekdays(studentId, meal));
-    const willEnable=!cur.has(wd);
-    if(willEnable) cur.add(wd); else cur.delete(wd);
-    const list=Array.from(cur).sort();
-    const payload={ seatNo:studentId, updatedBy:identity(), updatedAt:serverTimestamp() };
-    payload[meal+'Weekdays']=list;
-    await setDoc(doc(db,'recurringSkips',studentId), payload, {merge:true});
-    const mealLabel=meal==='lunch'?'午餐':'晚餐';
-    showToast(willEnable ? '已設定每週'+WD[wd]+mealLabel+'自動退餐' : '已取消每週'+WD[wd]+mealLabel+'自動退餐');
-    await fetchRecurringSkips();
   }
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
   else if(action==='delete-week'){ ev.stopPropagation(); await deleteWeek(el.dataset.week); }
@@ -2282,13 +2287,25 @@ document.getElementById('bell-btn').addEventListener('click',()=>{
   renderNotifPanel();
   document.getElementById('notif-bg').classList.add('show');
 });
-document.getElementById('notif-list-wrap').addEventListener('click', (ev)=>{
+document.getElementById('notif-list-wrap').addEventListener('click', async (ev)=>{
   const checkEl = ev.target.closest('[data-action="toggle-notif-processed"]');
   if(checkEl){
     ev.stopPropagation();
-    setNotifProcessed(checkEl.dataset.key, checkEl.checked);
+    // 已處理狀態現在直接寫回這筆退餐紀錄自己的 processed 欄位（entries 文件），
+    // 所有伙委共用同一份，不再只存在單一瀏覽器的 localStorage。
+    const parts = checkEl.dataset.key.split('|');
+    const date = parts[0], meal = parts[1], id = parts.slice(2).join('|');
+    const checked = checkEl.checked;
     const row = checkEl.closest('.notif-row');
-    if(row) row.classList.toggle('processed', checkEl.checked);
+    if(row) row.classList.toggle('processed', checked);
+    try{
+      await updateDoc(doc(db,'entries',date), { [meal+'.choices.'+id+'.processed']: checked });
+    }catch(err){
+      console.error(err);
+      showToast('標記失敗：'+(err.message||err.code||'未知錯誤'));
+      checkEl.checked = !checked;
+      if(row) row.classList.toggle('processed', !checked);
+    }
     return;
   }
   const el=ev.target.closest('[data-action="jump-notif"]'); if(!el) return;
