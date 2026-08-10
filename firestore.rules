@@ -168,6 +168,21 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
+    // ---------------- recurringSkips（固定不定餐，文件 id = 座號） ----------------
+    // 每週固定幾天自動退餐的設定。目前 index.html 裡只有伙委在座號設定面板
+    // 會寫入/刪除這個 collection（同學端沒有任何寫入這裡的按鈕或程式碼，
+    // 「以後這天都不定」是另一套獨立機制，直接寫在 entries/{date} 裡，跟這個
+    // collection 無關），所以寫入權限只給伙委。
+    // 讀取權限要開放給所有已登入使用者（伙委、同學都要），因為 index.html 裡
+    // 任何角色登入後都會呼叫 fetchRecurringSkips() 一次性讀取整個 collection，
+    // 用來在退餐紀錄畫面「虛擬」補上固定退餐的顯示（見 choiceMap()）；如果沒
+    // 有這條規則，同學登入時這個讀取會被規則預設拒絕（見檔案最下方的
+    // catch-all deny），導致每次登入都跳出一次「資料讀取失敗」的提示。
+    match /recurringSkips/{seatNo} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+    }
+
     // ---------------- entries（訂餐/退餐紀錄，依日期） ----------------
     // 全班的點餐/退餐狀態現在合併存在同一份文件的 lunch.choices / dinner.choices
     // map 欄位裡（取代原本一人一份子文件的 lunch_choice/dinner_choice），伙委可
