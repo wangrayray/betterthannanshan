@@ -146,10 +146,22 @@
   .overview .stat .lab{font-size:11px;color:var(--ink-soft);}
 
   .week-group{margin-bottom:22px;}
-  .week-title{font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;margin:0 0 10px 4px;text-transform:uppercase;letter-spacing:.04em;}
-  .week-title::after{content:"";flex:1;height:1px;background:var(--line);}
+  .week-title-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px 4px;}
   .week-delete-btn{border:none;background:none;color:var(--danger);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;text-transform:none;letter-spacing:normal;white-space:nowrap;}
-  .week-collapse-btn{border:none;background:none;color:var(--outside);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;text-transform:none;letter-spacing:normal;white-space:nowrap;margin-right:10px;}
+  .week-collapse-btn{border:none;background:none;color:var(--outside);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;text-transform:none;letter-spacing:normal;white-space:nowrap;}
+  .week-picker{position:relative;}
+  .week-picker-btn{display:flex;align-items:center;gap:8px;font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:14px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;box-shadow:var(--shadow);}
+  .week-picker-range{white-space:nowrap;}
+  .week-picker-rel{font-size:11px;font-weight:700;color:#fff;background:var(--outside);border-radius:10px;padding:1px 8px;white-space:nowrap;}
+  .week-picker-caret{font-size:10px;color:var(--ink-soft);}
+  .week-picker-panel{position:absolute;top:calc(100% + 6px);left:0;z-index:15;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.2);padding:8px;min-width:260px;max-height:60vh;overflow-y:auto;}
+  .week-picker-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;font-family:inherit;border:none;background:none;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--ink);}
+  .week-picker-item:hover{background:var(--paper-soft);}
+  .week-picker-item.active{background:var(--outside-bg);color:var(--outside);font-weight:700;}
+  .week-picker-item-rel{font-size:10.5px;color:var(--ink-soft);white-space:nowrap;}
+  .week-picker-item.active .week-picker-item-rel{color:var(--outside);}
+  .week-picker-archive{margin-top:6px;border-top:1px dashed var(--line);padding-top:6px;}
+  .week-picker-archive-toggle{display:block;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;color:var(--ink-soft);background:none;border:none;padding:6px 10px;}
 
   .date-card,.event-card{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;}
   .date-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;cursor:pointer;user-select:none;flex-wrap:wrap;gap:8px;}
@@ -688,6 +700,9 @@ function jumpToCancelEntry(date, meal, label){
     document.getElementById('tab-meal-btn').classList.add('active');
     document.getElementById('tab-event-btn').classList.remove('active');
   }
+  // 只有目前選定的那一週會畫出來，所以要先切到通知所在的那一週，
+  // 日期卡片才找得到、才能捲過去、閃一下提示座號。
+  selectedWeekKey = weekKey(date);
   collapsedDates.delete(date);
   render();
   setTimeout(()=>{
@@ -725,6 +740,9 @@ let draftChoice = {};    // "date|meal" -> {status,note}  同學按選項時的�
 
 let collapsedDates = new Set();
 let defaultedCollapseDates = new Set();
+let selectedWeekKey = null;   // 目前選擇檢視的週次（週一日期字串），null 代表尚未決定，render 時會自動選本週
+let weekPickerOpen = false;   // 選週下拉面板是否展開
+let archiveSubmenuOpen = false; // 選週面板裡「封存／歷史週次」子選單是否展開
 // 伙委端「批次送出」本機暫存：key 是 date+'|'+meal+'|'+label，value 是
 // {date,meal,label,baseline,next,name,note}。baseline 記錄「開始編輯當下」看到
 // 的狀態，送出時如果 baseline 跟 Firestore 目前最新值不一致（代表送出前被別
@@ -768,6 +786,18 @@ function getMonday(d){ const day=d.getDay(); const diff=day===0?-6:1-day; const 
 function toKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function weekKey(s){ return toKey(getMonday(parseDate(s))); }
 function weekLabel(k){ const mon=parseDate(k); const sun=new Date(mon); sun.setDate(mon.getDate()+6); return formatMD(mon)+'（一）－'+formatMD(sun)+'（日）'; }
+// 距離「本週」幾週：0=本週，1=下週，2=下下週，-1=上週，以此類推，用來在選週
+// 按鈕上標示相對位置，不用自己算日期差幾週。
+function relativeWeekLabel(wk, curWeek){
+  const diffDays = Math.round((parseDate(wk) - parseDate(curWeek)) / 86400000);
+  const diffWeeks = Math.round(diffDays/7);
+  if(diffWeeks===0) return '本週';
+  if(diffWeeks===1) return '下週';
+  if(diffWeeks===2) return '下下週';
+  if(diffWeeks===-1) return '上週';
+  if(diffWeeks===-2) return '上上週';
+  return diffWeeks>0 ? diffWeeks+' 週後' : Math.abs(diffWeeks)+' 週前';
+}
 function fmtTime(iso){ if(!iso) return ''; const d=new Date(iso); return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -994,7 +1024,7 @@ const STAFF_TUTORIAL_STEPS = [
     </div>` },
   { title:'刪除紀錄', desc:'不小心多建立的日期或整週，可以用這裡的「刪除此日紀錄」／「刪除整週」清掉；這個動作無法復原，刪之前要確認清楚。',
     stageHtml:`<div style="display:flex;flex-direction:column;gap:10px;max-width:300px;">
-      <div class="week-title" style="margin:0;">8/10（一）－8/16（日）<button class="week-delete-btn">刪除整週</button></div>
+      <div class="week-title-bar" style="margin:0;">8/10（一）－8/16（日）<button class="week-delete-btn">刪除整週</button></div>
       <div class="date-foot" style="margin:0;padding:0;"><button class="date-delete tutorial-target">刪除此日紀錄</button></div>
     </div>` },
   { title:'備註欄', desc:'每天可以留一段文字備註給其他伙委看，例如誰請假、誰有特殊需求；只有伙委看得到，同學看不到。',
@@ -1066,6 +1096,7 @@ function teardownState(){
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
   defaultedCollapseDates=new Set();
+  selectedWeekKey=null; weekPickerOpen=false; archiveSubmenuOpen=false;
 }
 
 onAuthStateChanged(auth, async (user)=>{
@@ -1223,6 +1254,7 @@ async function addDate(dateStr, opts){
   }
   collapsedDates.delete(dateStr);
   if(!opts.silent){
+    selectedWeekKey = weekKey(dateStr);
     render();
     setTimeout(()=>{ const el=document.querySelector('[data-datecard="'+dateStr+'"]'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },60);
   }
@@ -1288,8 +1320,9 @@ async function addWeek(anchorDateStr){
     await addDate(key,{silent:true,copyFromPrevWeek:true});
     if(isNew) createdNew++;
   }
-  render();
   const wk=toKey(mon);
+  selectedWeekKey = wk;
+  render();
   setTimeout(()=>{ const el=document.querySelector('.week-group[data-week="'+wk+'"]'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); },60);
   showToast(createdNew?'已建立整週，並自動延續上週的退餐名單':'這週的紀錄已經存在囉');
 }
@@ -1597,6 +1630,14 @@ function render(){
   if(activeTab==='meal') renderMealTab(); else renderEventTab();
   updateBellBadge();
 }
+// 選週面板點外面自動收起來（跟一般下拉選單習慣一致），避免面板一直開著擋畫面。
+document.addEventListener('click', (ev)=>{
+  if(weekPickerOpen && !ev.target.closest('.week-picker')){
+    weekPickerOpen = false;
+    archiveSubmenuOpen = false;
+    render();
+  }
+});
 
 function pendingRosterNote(){
   if(role==='student' && !studentsRoster[studentId]){
@@ -1636,28 +1677,49 @@ function renderMealTab(){
 
   const weeks={};
   dates.forEach(d=>{ const wk=weekKey(d); (weeks[wk]=weeks[wk]||[]).push(d); });
-  const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
-  // 「最新週」＝目前所有紀錄裡最晚的那一週（可能是伙委已經先建好的下禮拜），
-  // 不是用「今天」去判斷，這樣伙委先建下週資料時，展開的才會是下週而不是本週。
-  const latestWeekKey = weekKeys[0];
+  const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a)); // 新到舊
+  const curWeek = weekKey(todayStr());
 
-  dates.forEach(d=>{
-    if(!defaultedCollapseDates.has(d)){
-      defaultedCollapseDates.add(d);
-      if(weekKey(d)<latestWeekKey) collapsedDates.add(d);
-    }
-  });
+  // 畫面一次只顯示一週：優先維持使用者目前選定的週次（如果那一週還有資料），
+  // 沒選過或選的週次已經被刪掉時，預設顯示「本週」；如果本週還沒有任何紀錄
+  // （例如伙委已經先建好下週的資料），就退而求其次顯示資料裡最新的一週。
+  if(!selectedWeekKey || !weeks[selectedWeekKey]){
+    selectedWeekKey = weeks[curWeek] ? curWeek : weekKeys[0];
+  }
+  const wk = selectedWeekKey;
+  const ds = weeks[wk].sort((a,b)=>a.localeCompare(b));
 
-  let html=addBarHtml+noteHtml;
-  weekKeys.forEach(wk=>{
-    const ds=weeks[wk].sort((a,b)=>a.localeCompare(b));
-    const weekDeleteBtn = role==='staff' ? `<button class="week-delete-btn" data-action="delete-week" data-week="${wk}">刪除整週</button>` : '';
-    const allCollapsed = ds.every(d=>collapsedDates.has(d));
-    const weekCollapseBtn = `<button class="week-collapse-btn" data-action="toggle-week" data-week="${wk}">${allCollapsed?'展開本週':'一鍵收合本週'}</button>`;
-    html += '<div class="week-group" data-week="'+wk+'"><div class="week-title">'+weekCollapseBtn+weekLabel(wk)+weekDeleteBtn+'</div>';
-    ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
-    html += '</div>';
-  });
+  const weekDeleteBtn = role==='staff' ? `<button class="week-delete-btn" data-action="delete-week" data-week="${wk}">刪除整週</button>` : '';
+  const allCollapsed = ds.every(d=>collapsedDates.has(d));
+  const weekCollapseBtn = `<button class="week-collapse-btn" data-action="toggle-week" data-week="${wk}">${allCollapsed?'展開本週':'一鍵收合本週'}</button>`;
+
+  // 選週按鈕：本週／未來週直接攤平列在面板裡；早於本週的通通收進「封存／歷史
+  // 週次」子選單，避免舊資料一多，選單被撐得很長。
+  const activeWeeks = weekKeys.filter(k=>k>=curWeek).sort((a,b)=>a.localeCompare(b));
+  const archivedWeeks = weekKeys.filter(k=>k<curWeek); // 已經是新到舊
+  const pickerItem = k => `<button type="button" class="week-picker-item ${k===wk?'active':''}" data-action="select-week" data-week="${k}"><span>${weekLabel(k)}</span><span class="week-picker-item-rel">${relativeWeekLabel(k, curWeek)}</span></button>`;
+  const pickerHtml = `
+  <div class="week-picker">
+    <button type="button" class="week-picker-btn" data-action="toggle-week-picker">
+      <span class="week-picker-range">${weekLabel(wk)}</span>
+      <span class="week-picker-rel">${relativeWeekLabel(wk, curWeek)}</span>
+      <span class="week-picker-caret">▾</span>
+    </button>
+    ${weekPickerOpen ? `
+    <div class="week-picker-panel">
+      ${activeWeeks.map(pickerItem).join('')}
+      ${archivedWeeks.length ? `
+      <div class="week-picker-archive">
+        <button type="button" class="week-picker-archive-toggle" data-action="toggle-archive-submenu">${archiveSubmenuOpen?'▾':'▸'} 封存／歷史週次（${archivedWeeks.length}）</button>
+        ${archiveSubmenuOpen ? archivedWeeks.map(pickerItem).join('') : ''}
+      </div>` : ''}
+    </div>` : ''}
+  </div>`;
+
+  let html = addBarHtml + noteHtml + `<div class="week-title-bar">${pickerHtml}${weekCollapseBtn}${weekDeleteBtn}</div>`;
+  html += '<div class="week-group" data-week="'+wk+'">';
+  ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
+  html += '</div>';
   content.innerHTML = html;
 }
 
@@ -1957,6 +2019,21 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const ds=Object.keys(entries).filter(d=>weekKey(d)===wk);
     const allCollapsed = ds.every(d=>collapsedDates.has(d));
     ds.forEach(d=>{ if(allCollapsed) collapsedDates.delete(d); else collapsedDates.add(d); });
+    render();
+  }
+  else if(action==='toggle-week-picker'){
+    weekPickerOpen = !weekPickerOpen;
+    if(!weekPickerOpen) archiveSubmenuOpen = false;
+    render();
+  }
+  else if(action==='select-week'){
+    selectedWeekKey = el.dataset.week;
+    weekPickerOpen = false;
+    archiveSubmenuOpen = false;
+    render();
+  }
+  else if(action==='toggle-archive-submenu'){
+    archiveSubmenuOpen = !archiveSubmenuOpen;
     render();
   }
   else if(action==='cycle-status'){
