@@ -83,14 +83,14 @@
   .notif-row.processed{opacity:.5;}
   .notif-row.processed .notif-main{text-decoration:line-through;}
   .notif-check{display:flex;align-items:center;flex-shrink:0;cursor:pointer;}
-  .notif-prev{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;}
-  .notif-prev summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-soft);padding:4px 0;list-style:none;}
-  .notif-prev summary::-webkit-details-marker{display:none;}
-  .notif-prev summary::before{content:'▸ ';}
-  .notif-prev[open] summary::before{content:'▾ ';}
-  .notif-week-group{margin-top:8px;}
-  .notif-week-title{font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:5px;text-transform:uppercase;letter-spacing:.03em;}
-  .notif-week-group .notif-list{gap:6px;}
+  .notif-week-group{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;}
+  .notif-week-group:first-child{margin-top:0;border-top:none;padding-top:0;}
+  .notif-week-group summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-soft);padding:4px 0;list-style:none;display:flex;align-items:center;gap:4px;}
+  .notif-week-group summary::-webkit-details-marker{display:none;}
+  .notif-week-group summary::before{content:'▸';}
+  .notif-week-group[open] > summary::before{content:'▾';}
+  .notif-week-group .notif-list{margin-top:6px;gap:6px;}
+  .notif-week-badge{font-size:10px;font-weight:700;color:var(--outside);background:var(--outside-bg);border-radius:10px;padding:0 6px;}
   @keyframes jump-flash-kf{
     0%,100%{ box-shadow:0 0 0 0 rgba(255,210,63,0); }
     50%{ box-shadow:0 0 0 4px #FFD23F; }
@@ -101,6 +101,11 @@
   .recur-weekday-picker label{display:inline-flex !important;align-items:center;gap:2px;font-size:12px;margin-right:6px;cursor:pointer;}
   .notif-info{display:flex;flex-direction:column;gap:1px;}
   .notif-main{font-size:13px;font-weight:700;color:var(--danger);}
+  .notif-row.recur-type{background:var(--outside-bg);}
+  .notif-row.recur-type .notif-main{color:var(--outside);}
+  .notif-tag{display:inline-block;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-right:6px;vertical-align:middle;color:#fff;}
+  .notif-tag.tag-cancel{background:var(--danger);}
+  .notif-tag.tag-recur{background:var(--outside);}
   .notif-time{font-size:11px;color:var(--ink-soft);}
   .notif-close{display:flex;justify-content:flex-end;margin-top:12px;}
 
@@ -337,7 +342,7 @@
     身份：<b id="who-label">尚未登入</b>
     <button id="who-change-btn">登出 / 切換帳號</button>
     <button class="tutorial-link-btn" id="tutorial-replay-btn" style="display:none;">新手教學</button>
-    <button class="bell-btn" id="bell-btn" title="退餐通知（伙委）" style="display:none;">🔔<span class="bell-badge" id="bell-badge">0</span></button>
+    <button class="bell-btn" id="bell-btn" title="退餐／以後不定通知（伙委）" style="display:none;">🔔<span class="bell-badge" id="bell-badge">0</span></button>
     <button class="gear-btn" id="gear-btn" title="座號設定（伙委）" style="display:none;">⚙️</button>
   </div>
 
@@ -365,8 +370,8 @@
 
 <div class="modal-bg" id="notif-bg">
   <div class="notif-panel">
-    <h3>🔔 退餐通知</h3>
-    <div class="sub">列出目前所有「退餐」紀錄（不含訂餐／葷素選擇），依時間最新排序，點通知可以跳到當天並標示退餐座號；勾選代表已經處理過這筆（所有伙委共用同一份資料，任何人勾選後大家都看得到）。打開這個視窗會把目前看到的都標記為已讀（已讀狀態只存在你自己的裝置上）；上週以前的紀錄會收進下方「先前通知」，依週分組存放。</div>
+    <h3>🔔 退餐／以後不定通知</h3>
+    <div class="sub">列出目前所有「退餐」與「以後這天都不定」紀錄（不含正常訂餐／葷素選擇），用標籤區分兩種類型；依「餐點日期」分週整理，每一週都可以自行展開／收合，本週（含未來週）預設展開，比較早的週次預設收合。點通知可以跳到當天並標示座號；勾選代表已經處理過這筆（所有伙委共用同一份資料，任何人勾選後大家都看得到）。打開這個視窗會把目前看到的都標記為已讀（已讀狀態只存在你自己的裝置上）。</div>
     <div id="notif-list-wrap"></div>
     <div class="notif-close"><button class="btn btn-ghost" id="notif-close-btn">關閉</button></div>
   </div>
@@ -584,15 +589,18 @@ function choiceArr(date, meal){
 // 「已讀」用瀏覽器 localStorage 記錄最後查看時間（每台裝置各自記錄），
 // 打開通知視窗時，會把當下看到的這幾筆都標記為已讀。
 // ============================================================
-function computeCancelNotifications(){
+function computeMealNotifications(){
+  // 通知欄同時列出「退餐」跟「以後這天都不定」兩種狀態（不列正常訂餐/葷素
+  // 選擇），用 type 欄位區分，畫面上用不同顏色標籤呈現，方便伙委一次看到
+  // 所有需要留意的異動。
   const list=[];
   Object.keys(entries).forEach(date=>{
     ['lunch','dinner'].forEach(meal=>{
       choiceArr(date, meal).forEach(c=>{
-        if(c.status==='cancel' && !c._virtual){
+        if((c.status==='cancel' || c.status==='recur') && !c._virtual){
           list.push({
             key: date+'|'+meal+'|'+c.id,
-            date, meal,
+            date, meal, type: c.status,
             label: c.seatNo || c.name || c.id,
             updatedAtMs: tsMillis(c.updatedAt),
             processed: !!c.processed
@@ -618,53 +626,56 @@ function updateBellBadge(){
   if(!badge) return;
   if(role!=='staff'){ badge.classList.remove('show'); return; }
   const lastSeen=getNotifLastSeen();
-  const unread=computeCancelNotifications().filter(n=>n.updatedAtMs > lastSeen).length;
+  const unread=computeMealNotifications().filter(n=>n.updatedAtMs > lastSeen).length;
   badge.textContent = unread>99 ? '99+' : String(unread);
   badge.classList.toggle('show', unread>0);
 }
 function renderNotifRow(n){
   const processed = !!n.processed;
+  const isRecur = n.type==='recur';
+  const tagLabel = isRecur ? '以後不定' : '退餐';
+  const actionText = isRecur ? '選擇以後這天都不定' : '退餐';
   return `
-      <div class="notif-row ${processed?'processed':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
+      <div class="notif-row ${processed?'processed':''} ${isRecur?'recur-type':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
         <label class="notif-check" title="標記為已處理（所有伙委共用）"><input type="checkbox" data-action="toggle-notif-processed" data-key="${escapeHtml(n.key)}" ${processed?'checked':''}></label>
         <div class="notif-info">
-          <span class="notif-main">${escapeHtml(n.date)}・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} 退餐</span>
+          <span class="notif-main"><span class="notif-tag ${isRecur?'tag-recur':'tag-cancel'}">${tagLabel}</span>${escapeHtml(n.date)}・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} ${actionText}</span>
           <span class="notif-time">${n.updatedAtMs ? new Date(n.updatedAtMs).toLocaleString('zh-TW') : ''}</span>
         </div>
       </div>`;
 }
 function renderNotifPanel(){
-  const list=computeCancelNotifications();
+  const list=computeMealNotifications();
   const wrap=document.getElementById('notif-list-wrap');
   if(!list.length){
-    wrap.innerHTML = `<div class="empty-state">目前沒有任何退餐紀錄</div>`;
+    wrap.innerHTML = `<div class="empty-state">目前沒有任何退餐或「以後不定」紀錄</div>`;
     setNotifLastSeen(Date.now());
     updateBellBadge();
     return;
   }
-  // 按「週」分組：本週（含未來週）維持攤平顯示，上週以前的收進「先前通知」
-  // 摺疊區塊，因為訂餐是訂隔週的，一旦週次換了，上一週的退餐紀錄就變成歷史
-  // 資料，不需要再放在最上層提醒伙委。
+  // 全部依「餐點日期」分週整理成一個一個可以自行展開/收合的區塊（<details>），
+  // 不再是只有本週攤平＋以前收合兩種固定狀態：本週（含未來週）預設展開，
+  // 比較早的週次預設收合，伙委也可以自己點開／收合任何一週。每個區塊內部
+  // 再依日期→午晚餐→座號排序，方便照時間順序處理。
   const curWeek = weekKey(todayStr());
-  const current = list.filter(n=>weekKey(n.date) >= curWeek);
-  const previous = list.filter(n=>weekKey(n.date) < curWeek);
-  let html = current.length
-    ? `<div class="notif-list">${current.map(renderNotifRow).join('')}</div>`
-    : `<div class="empty-state">本週沒有任何退餐紀錄</div>`;
-  if(previous.length){
-    const weeks={};
-    previous.forEach(n=>{ const wk=weekKey(n.date); (weeks[wk]=weeks[wk]||[]).push(n); });
-    const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
-    html += `
-    <details class="notif-prev">
-      <summary>先前通知（${previous.length}）</summary>
-      ${weekKeys.map(wk=>`
-        <div class="notif-week-group">
-          <div class="notif-week-title">${weekLabel(wk)}</div>
-          <div class="notif-list">${weeks[wk].map(renderNotifRow).join('')}</div>
-        </div>`).join('')}
+  const weeks={};
+  list.forEach(n=>{ const wk=weekKey(n.date); (weeks[wk]=weeks[wk]||[]).push(n); });
+  Object.keys(weeks).forEach(wk=>{
+    weeks[wk].sort((a,b)=>{
+      if(a.date!==b.date) return a.date.localeCompare(b.date);
+      if(a.meal!==b.meal) return a.meal==='lunch' ? -1 : 1;
+      return String(a.label).localeCompare(String(b.label));
+    });
+  });
+  const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
+  const html = weekKeys.map(wk=>{
+    const isCurrentOrFuture = wk >= curWeek;
+    return `
+    <details class="notif-week-group" ${isCurrentOrFuture?'open':''}>
+      <summary>${weekLabel(wk)}${wk===curWeek?'（本週）':''}<span class="notif-week-badge">${weeks[wk].length}</span></summary>
+      <div class="notif-list">${weeks[wk].map(renderNotifRow).join('')}</div>
     </details>`;
-  }
+  }).join('');
   wrap.innerHTML = html;
   // 標記為已讀：用目前列表中最新的一筆時間當作「已看過」的分界點
   setNotifLastSeen(list[0].updatedAtMs);
@@ -1686,6 +1697,13 @@ function renderStaffDateCard(date){
 function renderStaffMealCard(date, meal, label, m, choiceList){
   const roster=rosterLabels();
   const counts=mealCounts(choiceList);
+  // 「原本 X 人，後來變 Y 人」提示：伙委上次按「送出這天的異動」時會把當下
+  // 的人數存成 m.confirmedCounts 快照；如果快照存在、而且現在算出來的人數
+  // 跟快照不一樣（不管是同學自己改，還是伙委又代改），就顯示這個提示，
+  // 讓伙委知道已經確認過的人數事後又被改掉了，需要重新跟廠商確認。
+  const confirmed = m.confirmedCounts;
+  const drifted = confirmed && (confirmed.ordered!==counts.ordered || confirmed.meat!==counts.meat || confirmed.veg!==counts.veg || confirmed.cancel!==counts.cancel);
+  const confirmedAtMs = confirmed ? tsMillis(m.confirmedAt) : 0;
   const grid=roster.map(lab=>{
     const c=choiceList.find(x=>x.id===lab);
     const status=c?c.status:'unset';
@@ -1702,6 +1720,7 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
     <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人${counts.recur?`・不定 <b>${counts.recur}</b> 人`:''}・尚未選擇 <b>${counts.unset}</b> 人</div>
+    ${drifted?`<div class="pending-note" style="margin:0 0 8px;">⚠️ 上次送出確認時共訂 <b>${confirmed.ordered}</b> 人（葷${confirmed.meat}／素${confirmed.veg}）${confirmedAtMs?'，'+new Date(confirmedAtMs).toLocaleString('zh-TW'):''}，之後有異動，目前變成 <b>${counts.ordered}</b> 人（葷${counts.meat}／素${counts.veg}），請重新確認</div>`:''}
     <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 以後不定 → 未選）</div>
     <div class="number-grid">${grid}</div>
     ${unsetSeats.length?`<div class="pending-note" style="margin:0 0 8px;">尚未選擇（${unsetSeats.length}）：${unsetSeats.map(escapeHtml).join('、')}</div>`:''}
@@ -1995,13 +2014,32 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
       applied.push(k);
     });
     if(applied.length){
+      // 「確認人數」基準：伙委按下這個送出按鈕，就代表他看過、確認過這一天
+      // 午餐／晚餐目前的訂餐人數，記錄成 confirmedCounts 快照（連同確認時間、
+      // 確認人）。之後如果有人（同學自己或其他伙委）又更改選擇，畫面上的
+      // 「共訂 X 人」會跟這個快照不一樣，就會提醒伙委「原本 X 人，後來變 Y
+      // 人」，避免已經跟廠商回報的訂購人數，事後被悄悄改掉卻沒人發現。
+      ['lunch','dinner'].forEach(meal=>{
+        const map = Object.assign({}, choiceMap(date, meal));
+        pendingKeys.forEach(k=>{
+          const p=staffDraft[k];
+          if(p.meal!==meal || conflicts.includes(p)) return;
+          if(p.next===null) delete map[p.label];
+          else map[p.label] = Object.assign({}, map[p.label], {id:p.label, status:p.next});
+        });
+        const arr = Object.keys(map).map(id=>Object.assign({id}, map[id]));
+        const counts = mealCounts(arr);
+        fieldUpdates[meal+'.confirmedCounts'] = {meat:counts.meat, veg:counts.veg, cancel:counts.cancel, recur:counts.recur, ordered:counts.ordered};
+        fieldUpdates[meal+'.confirmedAt'] = serverTimestamp();
+        fieldUpdates[meal+'.confirmedBy'] = identity();
+      });
       fieldUpdates.lastEditBy=identity();
       fieldUpdates.lastEditAt=new Date().toISOString();
       await updateDoc(doc(db,'entries',date), fieldUpdates);
     }
     applied.forEach(k=>delete staffDraft[k]);
     if(conflicts.length){ showToast('已送出，但有 '+conflicts.length+' 筆因為被別人改過而跳過，請重新確認'); }
-    else if(applied.length){ showToast('已送出 '+applied.length+' 筆異動'); }
+    else if(applied.length){ showToast('已送出 '+applied.length+' 筆異動，人數已確認'); }
     render();
   }
   else if(action==='discard-day-changes'){
