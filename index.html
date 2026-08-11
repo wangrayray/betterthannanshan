@@ -639,7 +639,7 @@ function renderNotifRow(n){
       <div class="notif-row ${processed?'processed':''} ${isRecur?'recur-type':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
         <label class="notif-check" title="標記為已處理（所有伙委共用）"><input type="checkbox" data-action="toggle-notif-processed" data-key="${escapeHtml(n.key)}" ${processed?'checked':''}></label>
         <div class="notif-info">
-          <span class="notif-main"><span class="notif-tag ${isRecur?'tag-recur':'tag-cancel'}">${tagLabel}</span>${escapeHtml(n.date)}・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} ${actionText}</span>
+          <span class="notif-main"><span class="notif-tag ${isRecur?'tag-recur':'tag-cancel'}">${tagLabel}</span>${escapeHtml(n.date)}（週${WD[parseDate(n.date).getDay()]}）・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} ${actionText}</span>
           <span class="notif-time">${n.updatedAtMs ? new Date(n.updatedAtMs).toLocaleString('zh-TW') : ''}</span>
         </div>
       </div>`;
