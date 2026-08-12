@@ -1407,6 +1407,10 @@ async function addMenuItem(eventId, name, price){
   const id=uid();
   await setDoc(doc(db,'events',eventId,'menu',id), {name, price:Number(price)||0, eventId});
   await touchEvent(eventId);
+  // menu 是一次性讀取（見 fetchEventMenu 的說明），單靠 touchEvent 觸發的
+  // events 監聽並不會重新抓 eventMenu 本身，所以寫入成功後要手動再讀一次，
+  // 不然要等切分頁或重新整理才會看到新選項。
+  await fetchEventMenu();
 }
 async function removeMenuItem(eventId, itemId){
   await deleteDoc(doc(db,'events',eventId,'menu',itemId));
@@ -1419,6 +1423,8 @@ async function removeMenuItem(eventId, itemId){
   });
   await batch.commit();
   await touchEvent(eventId);
+  // 同上：menu 不是即時監聽，刪除後也要手動重抓一次才會馬上從畫面消失。
+  await fetchEventMenu();
 }
 function orderTotal(order, menu){
   return Object.entries(order.items||{}).reduce((s,[itemId,qty])=>{
