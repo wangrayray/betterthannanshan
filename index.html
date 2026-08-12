@@ -2051,10 +2051,11 @@ function renderStaffEventCard(ev){
   const isCoordinatorViewer = role==='student' && !!studentId;
   const myOrder = isCoordinatorViewer ? (orders.find(o=>o.id===studentId) || {items:{}}) : null;
 
-  // 座號同學訂購狀況那份清單只是「檢視用」，不能在那裡代填任何人（含自己）；
-  // 外食訂購人自己那一筆改從上面新增的可編輯區塊處理，這裡排除掉，避免同一
-  // 筆訂購同時出現在「唯讀清單」和「我的訂購」兩處造成混淆。
-  const rosterOrders = orders.filter(o=>roster.includes(o.id) && !(isCoordinatorViewer && o.id===studentId));
+  // 座號同學訂購狀況：顯示所有座號的訂購明細＋已繳款勾選框，外食訂購人自己
+  // 的座號也要留在這份清單裡——上面「我的訂購」那個區塊只負責讓他挑選品項
+  // 數量，本人的訂購明細跟「已繳款」勾選框都只有這份清單才有，如果把自己
+  // 濾掉，會變成看不到自己訂了什麼、也無法勾自己已繳款。
+  const rosterOrders = orders.filter(o=>roster.includes(o.id));
   const customOrders = orders.filter(o=>!roster.includes(o.id));
 
   const rosterRows = rosterOrders.map(o=>{
