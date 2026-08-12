@@ -1920,7 +1920,23 @@ function renderStaffEventCard(ev){
 
   const menuChips = menu.map(mi=>`<span class="name-chip">${escapeHtml(mi.name)} · NT$${mi.price}<button data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}">×</button></span>`).join('');
 
-  const rosterOrders = orders.filter(o=>roster.includes(o.id));
+  // 外食訂購人（同學身份、但有管理權限）本人也在座號名冊裡，除了管理活動，
+  // 也應該能像其他同學一樣，替自己選品項與數量下單。伙委（role==='staff'）
+  // 沒有座號，本來就不是訂購對象，所以只在 role==='student' 時顯示這個區塊。
+  const isCoordinatorViewer = role==='student' && !!studentId;
+  const myOrder = isCoordinatorViewer ? (orders.find(o=>o.id===studentId) || {items:{}}) : null;
+  const mySub = isCoordinatorViewer ? orderTotal(myOrder, menu) : 0;
+  const myItemRows = isCoordinatorViewer ? menu.map(mi=>`
+    <div class="outside-row">
+      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}</span>
+      <span class="outside-currency">NT$${mi.price}</span>
+      <input type="number" min="0" class="outside-amount" value="${(myOrder.items&&myOrder.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${studentId}" data-item="${mi.id}">
+    </div>`).join('') : '';
+
+  // 座號同學訂購狀況那份清單只是「檢視用」，不能在那裡代填任何人（含自己）；
+  // 外食訂購人自己那一筆改從上面新增的可編輯區塊處理，這裡排除掉，避免同一
+  // 筆訂購同時出現在「唯讀清單」和「我的訂購」兩處造成混淆。
+  const rosterOrders = orders.filter(o=>roster.includes(o.id) && !(isCoordinatorViewer && o.id===studentId));
   const customOrders = orders.filter(o=>!roster.includes(o.id));
 
   const rosterRows = rosterOrders.map(o=>{
@@ -1962,6 +1978,14 @@ function renderStaffEventCard(ev){
         <input type="number" min="0" placeholder="金額" data-role="menu-price" data-event="${ev.id}" style="flex:1;">
         <button data-action="add-menu-item" data-event="${ev.id}">新增選項</button>
       </div>
+
+      ${isCoordinatorViewer ? `
+      <div class="section-label" style="margin-top:12px;">🍱 我的訂購（座號 ${escapeHtml(studentId)}）</div>
+      ${menu.length ? `
+        <div class="outside-list">${myItemRows}</div>
+        <div class="outside-total">我的金額：NT$ ${mySub}${myOrder.paid?'　<span class="paid-tag">✓ 已確認收款</span>':''}</div>
+      ` : `<div class="other-label">尚未新增菜單選項，請先在上方新增後再回來選購</div>`}
+      ` : ''}
 
       <div class="section-label" style="margin-top:12px;">座號同學訂購狀況（由同學自行選取，此處僅顯示，無法在此代填）</div>
       ${rosterOrders.length ? `<div class="outside-list">${rosterRows}</div>` : `<div class="other-label">目前還沒有同學下單</div>`}
