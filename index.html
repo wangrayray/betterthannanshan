@@ -301,6 +301,13 @@
   .qty-item-name{font-size:11.5px;color:var(--ink-soft);}
   .qty-input{width:44px;font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:3px 4px;font-size:12.5px;text-align:center;}
 
+  .qty-stepper{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .qty-step-btn{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:16px;line-height:1;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .08s,opacity .15s;flex-shrink:0;}
+  .qty-step-btn:active{transform:scale(.88);}
+  .qty-step-btn:disabled{opacity:.35;cursor:not-allowed;}
+  .qty-step-btn.qty-step-plus{background:var(--outside);color:#fff;border-color:var(--outside);}
+  .qty-step-val{min-width:20px;text-align:center;font-size:14px;font-weight:700;}
+
   .empty-state{text-align:center;color:var(--ink-soft);font-size:13px;padding:50px 20px;background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);}
 
   .modal-bg{position:fixed;inset:0;background:rgba(10,26,42,.75);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;overflow-y:auto;}
@@ -737,6 +744,7 @@ let staffList = {};      // email -> {name}
 let eventCoordinators = {}; // seatNo -> {expiresAt,grantedBy,grantedAt}
 let recurringSkips = {}; // seatNo -> {weekdays:[0-6], updatedBy, updatedAt} 固定不定餐：每週這幾天自動退餐
 let draftChoice = {};    // "date|meal" -> {status,note}  同學按選項時的本機暫存，按「確定送出」才會真的寫入 Firestore
+let eventOrderDraft = {}; // "eventId|label" -> {items:{itemId:qty,...}}  外食訂購（自己下單那部分）用 +/- 按鈕調整時的本機暫存，按「確定送出」才會真的寫入 Firestore
 
 let collapsedDates = new Set();
 let defaultedCollapseDates = new Set();
@@ -978,16 +986,16 @@ const TUTORIAL_STEPS = [
     </div>` },
   { title:'外食訂購', desc:'如果伙委開放合購／外食訂購活動，可以點這裡切換過去，選你要的品項和數量。',
     stageHtml:`<div class="tab-bar" style="margin:0;"><button class="tab-btn">退餐紀錄</button><button class="tab-btn active tutorial-target">外食訂購</button></div>` },
-  { title:'選擇品項與數量', desc:'切到外食訂購頁面後，找到你要的品項，直接在數量欄輸入數字（可以重複訂購多樣），下面會自動幫你算出「我的金額」。',
+  { title:'選擇品項與數量', desc:'切到外食訂購頁面後，找到你要的品項，用「－ ／ ＋」按鈕調整數量（可以重複訂購多樣），下面會自動幫你算出「我的金額」；調整完別忘了按「確定送出」，伙委才看得到。',
     stageHtml:`<div class="event-card" style="max-width:320px;">
       <div class="event-head"><h3 style="font-size:14px;">示範：雞排店合購</h3></div>
       <div class="event-body">
         <div class="section-label">選擇品項與數量（可重複訂購）</div>
         <div class="outside-list">
-          <div class="outside-row"><span class="outside-name" style="width:auto;flex:1;">大雞排</span><span class="outside-currency">NT$60</span><input type="number" class="outside-amount tutorial-target" value="1"></div>
-          <div class="outside-row"><span class="outside-name" style="width:auto;flex:1;">紅茶</span><span class="outside-currency">NT$20</span><input type="number" class="outside-amount" value="0"></div>
+          <div class="outside-row"><span class="outside-name" style="width:auto;flex:1;">大雞排</span><span class="outside-currency">NT$60</span><div class="qty-stepper tutorial-target"><button type="button" class="qty-step-btn">－</button><span class="qty-step-val">1</span><button type="button" class="qty-step-btn qty-step-plus">＋</button></div></div>
+          <div class="outside-row"><span class="outside-name" style="width:auto;flex:1;">紅茶</span><span class="outside-currency">NT$20</span><div class="qty-stepper"><button type="button" class="qty-step-btn" disabled>－</button><span class="qty-step-val">0</span><button type="button" class="qty-step-btn qty-step-plus">＋</button></div></div>
         </div>
-        <div class="outside-total">我的金額：NT$60</div>
+        <div class="submit-row dirty"><span class="submit-status">我的金額：NT$60（尚未送出）</span><button type="button" class="btn btn-primary btn-submit-choice">確定送出</button></div>
       </div>
     </div>` },
   { title:'推薦餐廳', desc:'覺得有想吃的餐廳嗎？點這裡打開地圖搜尋店名、或直接點地圖上的店家來推薦；地圖上找不到的話，下面也可以直接輸入店名推薦。每人最多可以推薦兩家，自己推薦的可以隨時按「移除我的推薦」取消；伙委／外食訂購人則可以移除任何人的推薦。',
@@ -1092,7 +1100,7 @@ function teardownState(){
   teardownListeners();
   entries={}; events={}; eventMenu={}; eventOrders={};
   eventRecommendations={};
-  studentsRoster={}; staffList={}; eventCoordinators={}; recurringSkips={}; draftChoice={}; staffDraft={};
+  studentsRoster={}; staffList={}; eventCoordinators={}; recurringSkips={}; draftChoice={}; staffDraft={}; eventOrderDraft={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
   defaultedCollapseDates=new Set();
@@ -1432,6 +1440,112 @@ function orderTotal(order, menu){
     return s + (mi ? mi.price*qty : 0);
   },0);
 }
+// ============================================================
+// 外食訂購「自己下單」的本機暫存（+/- 按鈕 + 確定送出），跟退餐選擇的
+// draftChoice 是同一套精神：按 +/- 只改本機畫面，不會馬上打 Firestore，
+// 累積好想要的數量後按「確定送出」才一次寫入。key 用 "eventId|label"
+// （label 是座號），value 是 {items:{itemId:qty,...}}，只放「目前顯示的
+// 完整品項數量表」，跟 Firestore 上已送出的資料做比對來判斷是否 dirty。
+// ============================================================
+function orderDraftKey(eventId, label){ return eventId+'|'+label; }
+function committedOrderItems(eventId, label){
+  const existing=(eventOrders[eventId]||[]).find(o=>o.id===label);
+  return (existing && existing.items) || {};
+}
+function displayOrderItems(eventId, label){
+  const draft=eventOrderDraft[orderDraftKey(eventId,label)];
+  return draft ? draft.items : committedOrderItems(eventId, label);
+}
+function isOrderDraftDirty(eventId, label){
+  return !!eventOrderDraft[orderDraftKey(eventId,label)];
+}
+function itemsEqual(a,b){
+  const ak=Object.keys(a).filter(k=>a[k]>0).sort();
+  const bk=Object.keys(b).filter(k=>b[k]>0).sort();
+  if(ak.length!==bk.length) return false;
+  return ak.every((k,i)=> k===bk[i] && a[k]===b[k]);
+}
+function adjustOrderQty(eventId, label, itemId, delta){
+  const key=orderDraftKey(eventId,label);
+  const committed=committedOrderItems(eventId,label);
+  const base = eventOrderDraft[key] ? eventOrderDraft[key].items : committed;
+  const next = Object.assign({}, base);
+  const newQty = Math.max(0, (next[itemId]||0)+delta);
+  if(newQty<=0) delete next[itemId]; else next[itemId]=newQty;
+  if(itemsEqual(next, committed)){ delete eventOrderDraft[key]; }
+  else{ eventOrderDraft[key] = {items:next}; }
+  render();
+}
+function discardOrderDraft(eventId, label){
+  delete eventOrderDraft[orderDraftKey(eventId,label)];
+  render();
+}
+async function submitEventOrderDraft(eventId, label){
+  const key=orderDraftKey(eventId,label);
+  const draft=eventOrderDraft[key];
+  if(!draft) return;
+  const existing=(eventOrders[eventId]||[]).find(o=>o.id===label);
+  const committed=(existing && existing.items) || {};
+  const draftItems=draft.items || {};
+  if(!existing){
+    // 這個人在這個活動第一次下單，訂單文件還不存在，直接整份建立（過濾掉
+    // 數量為 0 的品項，不需要真的寫進去）。
+    const items={}; Object.keys(draftItems).forEach(id=>{ if(draftItems[id]>0) items[id]=draftItems[id]; });
+    await setDoc(doc(db,'events',eventId,'orders',label), {
+      studentId:label, name:label, paid:false, items, eventId, updatedBy:identity(), updatedAt:serverTimestamp()
+    });
+  } else {
+    // 訂單文件已存在：只針對「數量有變動」的品項各自用 dot-path 更新／
+    // deleteField()，不要整包覆蓋 items 這個 map（Firestore 的 merge 對巢狀
+    // map 是「合併」而非「取代」，直接整包塞新物件無法把數量歸零的品項從
+    // 舊資料裡刪掉，這點跟 removeMenuItem() 刪除品項時的處理方式一致）。
+    const allIds=new Set([...Object.keys(committed), ...Object.keys(draftItems)]);
+    const fieldUpdates={};
+    allIds.forEach(id=>{
+      const oldQty=committed[id]||0, newQty=draftItems[id]||0;
+      if(oldQty!==newQty){ fieldUpdates['items.'+id] = newQty>0 ? newQty : deleteField(); }
+    });
+    if(Object.keys(fieldUpdates).length){
+      fieldUpdates.updatedBy=identity(); fieldUpdates.updatedAt=serverTimestamp();
+      await updateDoc(doc(db,'events',eventId,'orders',label), fieldUpdates);
+    }
+  }
+  delete eventOrderDraft[key];
+  showToast('已送出訂購');
+  render();
+}
+function renderOrderStepperRows(eventId, label, menu){
+  const items=displayOrderItems(eventId, label);
+  return menu.map(mi=>{
+    const qty=items[mi.id]||0;
+    return `
+    <div class="outside-row">
+      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}</span>
+      <span class="outside-currency">NT$${mi.price}</span>
+      <div class="qty-stepper">
+        <button type="button" class="qty-step-btn" data-action="order-qty-step" data-event="${eventId}" data-label="${label}" data-item="${mi.id}" data-delta="-1" ${qty<=0?'disabled':''} aria-label="減少${escapeHtml(mi.name)}數量">－</button>
+        <span class="qty-step-val">${qty}</span>
+        <button type="button" class="qty-step-btn qty-step-plus" data-action="order-qty-step" data-event="${eventId}" data-label="${label}" data-item="${mi.id}" data-delta="1" aria-label="增加${escapeHtml(mi.name)}數量">＋</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function renderOrderSubmitRow(eventId, label, menu, paidNow, paidLabel){
+  const items=displayOrderItems(eventId, label);
+  const sub=orderTotal({items}, menu);
+  const dirty=isOrderDraftDirty(eventId, label);
+  let statusLine;
+  if(dirty) statusLine='我的金額：NT$ '+sub+'（尚未送出）';
+  else statusLine='我的金額：NT$ '+sub+(paidNow?'　'+(paidLabel||'✓ 已確認收款'):'');
+  return `
+  <div class="submit-row ${dirty?'dirty':''}">
+    <span class="submit-status">${statusLine}</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      ${dirty?`<button type="button" class="tutorial-link-btn" data-action="discard-event-order" data-event="${eventId}" data-label="${label}">捨棄</button>`:''}
+      <button type="button" class="btn btn-primary btn-submit-choice" data-action="submit-event-order" data-event="${eventId}" data-label="${label}" ${dirty?'':'disabled'}>確定送出</button>
+    </div>
+  </div>`;
+}
 async function setItemQty(eventId, label, itemId, val){
   const qty=Math.max(0, Math.floor(Number(val)||0));
   const existing=(eventOrders[eventId]||[]).find(o=>o.id===label);
@@ -1443,6 +1557,17 @@ async function setItemQty(eventId, label, itemId, val){
     paid: existing ? !!existing.paid : false,
     items, eventId, updatedBy:identity(), updatedAt:serverTimestamp()
   }, {merge:true});
+}
+// 伙委代填「其他訂購人」（不在座號名單上）那個區塊維持原本「點了就直接
+// 生效」的習慣，跟其他代填操作（例如打勾已繳款）一致，不套用確認送出流程；
+// 只是把數字輸入框換成 +/- 按鈕，手機上比較好點。
+function renderStaffQtyStepper(eventId, label, itemId, qty){
+  qty=Math.max(0, Number(qty)||0);
+  return `<div class="qty-stepper">
+    <button type="button" class="qty-step-btn" data-action="staff-qty-step" data-event="${eventId}" data-label="${escapeHtml(String(label))}" data-item="${itemId}" data-qty="${qty}" data-delta="-1" ${qty<=0?'disabled':''} aria-label="減少數量">－</button>
+    <span class="qty-step-val">${qty}</span>
+    <button type="button" class="qty-step-btn qty-step-plus" data-action="staff-qty-step" data-event="${eventId}" data-label="${escapeHtml(String(label))}" data-item="${itemId}" data-qty="${qty}" data-delta="1" aria-label="增加數量">＋</button>
+  </div>`;
 }
 async function removeParticipant(eventId, orderId){
   await deleteDoc(doc(db,'events',eventId,'orders',orderId));
@@ -1925,13 +2050,6 @@ function renderStaffEventCard(ev){
   // 沒有座號，本來就不是訂購對象，所以只在 role==='student' 時顯示這個區塊。
   const isCoordinatorViewer = role==='student' && !!studentId;
   const myOrder = isCoordinatorViewer ? (orders.find(o=>o.id===studentId) || {items:{}}) : null;
-  const mySub = isCoordinatorViewer ? orderTotal(myOrder, menu) : 0;
-  const myItemRows = isCoordinatorViewer ? menu.map(mi=>`
-    <div class="outside-row">
-      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}</span>
-      <span class="outside-currency">NT$${mi.price}</span>
-      <input type="number" min="0" class="outside-amount" value="${(myOrder.items&&myOrder.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${studentId}" data-item="${mi.id}">
-    </div>`).join('') : '';
 
   // 座號同學訂購狀況那份清單只是「檢視用」，不能在那裡代填任何人（含自己）；
   // 外食訂購人自己那一筆改從上面新增的可編輯區塊處理，這裡排除掉，避免同一
@@ -1952,7 +2070,7 @@ function renderStaffEventCard(ev){
     const itemInputs = menu.map(mi=>`
       <span class="qty-item">
         <span class="qty-item-name">${escapeHtml(mi.name)}</span>
-        <input type="number" min="0" class="qty-input" value="${(o.items&&o.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${o.id}" data-item="${mi.id}">
+        ${renderStaffQtyStepper(ev.id, o.id, mi.id, (o.items&&o.items[mi.id])||0)}
       </span>`).join('');
     return `
     <div class="outside-row ${paid?'paid':''}" style="align-items:flex-start;flex-wrap:wrap;">
@@ -1980,10 +2098,10 @@ function renderStaffEventCard(ev){
       </div>
 
       ${isCoordinatorViewer ? `
-      <div class="section-label" style="margin-top:12px;">🍱 我的訂購（座號 ${escapeHtml(studentId)}）</div>
+      <div class="section-label" style="margin-top:12px;">🍱 我的訂購（座號 ${escapeHtml(studentId)}，用 +/- 調整後按「確定送出」）</div>
       ${menu.length ? `
-        <div class="outside-list">${myItemRows}</div>
-        <div class="outside-total">我的金額：NT$ ${mySub}${myOrder.paid?'　<span class="paid-tag">✓ 已確認收款</span>':''}</div>
+        <div class="outside-list">${renderOrderStepperRows(ev.id, studentId, menu)}</div>
+        ${renderOrderSubmitRow(ev.id, studentId, menu, !!(myOrder&&myOrder.paid), '✓ 已確認收款')}
       ` : `<div class="other-label">尚未新增菜單選項，請先在上方新增後再回來選購</div>`}
       ` : ''}
 
@@ -2005,15 +2123,7 @@ function renderStudentEventCard(ev){
   const menu = eventMenu[ev.id]||[];
   const orders = eventOrders[ev.id]||[];
   const mine = orders.find(o=>o.id===studentId) || {items:{}};
-  const mySub = orderTotal(mine, menu);
   const total = eventTotal(ev);
-
-  const itemRows = menu.map(mi=>`
-    <div class="outside-row">
-      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}</span>
-      <span class="outside-currency">NT$${mi.price}</span>
-      <input type="number" min="0" class="outside-amount" value="${(mine.items&&mine.items[mi.id])||0}" data-action="item-qty" data-event="${ev.id}" data-label="${studentId}" data-item="${mi.id}">
-    </div>`).join('');
 
   return `
   <div class="event-card">
@@ -2021,9 +2131,9 @@ function renderStudentEventCard(ev){
     <div class="event-body">
       <div class="section-label">目前已有 <b>${orders.length}</b> 人參加・總金額 <b>NT$ ${total}</b></div>
       ${menu.length ? `
-        <div class="section-label" style="margin-top:8px;">選擇品項與數量（可重複訂購）</div>
-        <div class="outside-list">${itemRows}</div>
-        <div class="outside-total">我的金額：NT$ ${mySub}${mine.paid?'　<span class="paid-tag">✓ 伙委已確認收款</span>':''}</div>
+        <div class="section-label" style="margin-top:8px;">選擇品項與數量（可重複訂購，用 +/- 調整後按「確定送出」）</div>
+        <div class="outside-list">${renderOrderStepperRows(ev.id, studentId, menu)}</div>
+        ${renderOrderSubmitRow(ev.id, studentId, menu, !!mine.paid, '✓ 伙委已確認收款')}
       ` : `<div class="other-label">伙委尚未設定菜單選項</div>`}
 
       ${renderRecommendSection(ev.id, false)}
@@ -2230,6 +2340,19 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   }
   else if(action==='remove-menu-item'){ await removeMenuItem(eventId, el.dataset.item); }
   else if(action==='remove-participant'){ await removeParticipant(eventId, el.dataset.id); }
+  else if(action==='order-qty-step'){
+    // 自己下單（同學／外食訂購人）用的 +/- 按鈕：只改本機暫存，不會馬上
+    // 寫入 Firestore，要按下面的「確定送出」才會真的生效。
+    adjustOrderQty(eventId, el.dataset.label, el.dataset.item, Number(el.dataset.delta));
+  }
+  else if(action==='submit-event-order'){ await submitEventOrderDraft(eventId, el.dataset.label); }
+  else if(action==='discard-event-order'){ discardOrderDraft(eventId, el.dataset.label); }
+  else if(action==='staff-qty-step'){
+    // 伙委代填「其他訂購人」用的 +/- 按鈕：維持點了就直接生效，不套用
+    // 確認送出（跟這個區塊原本「代填即時儲存」的行為一致）。
+    const newQty=Math.max(0, Number(el.dataset.qty||0)+Number(el.dataset.delta));
+    await setItemQty(eventId, el.dataset.label, el.dataset.item, newQty);
+  }
   else if(action==='add-event-name'){
     const input=document.querySelector(`input[data-action="event-name-input"][data-event="${eventId}"]`);
     const name=input.value.trim(); if(!name) return;
