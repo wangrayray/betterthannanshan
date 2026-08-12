@@ -83,14 +83,6 @@
   .notif-row.processed{opacity:.5;}
   .notif-row.processed .notif-main{text-decoration:line-through;}
   .notif-check{display:flex;align-items:center;flex-shrink:0;cursor:pointer;}
-  .notif-week-group{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;}
-  .notif-week-group:first-child{margin-top:0;border-top:none;padding-top:0;}
-  .notif-week-group summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-soft);padding:4px 0;list-style:none;display:flex;align-items:center;gap:4px;}
-  .notif-week-group summary::-webkit-details-marker{display:none;}
-  .notif-week-group summary::before{content:'▸';}
-  .notif-week-group[open] > summary::before{content:'▾';}
-  .notif-week-group .notif-list{margin-top:6px;gap:6px;}
-  .notif-week-badge{font-size:10px;font-weight:700;color:var(--outside);background:var(--outside-bg);border-radius:10px;padding:0 6px;}
   @keyframes jump-flash-kf{
     0%,100%{ box-shadow:0 0 0 0 rgba(255,210,63,0); }
     50%{ box-shadow:0 0 0 4px #FFD23F; }
@@ -108,6 +100,15 @@
   .notif-tag.tag-recur{background:var(--outside);}
   .notif-time{font-size:11px;color:var(--ink-soft);}
   .notif-close{display:flex;justify-content:flex-end;margin-top:12px;}
+  .notif-type-filter{display:flex;gap:8px;margin-bottom:14px;}
+  .notif-type-btn{flex:1;font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--paper-soft);color:var(--ink-soft);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}
+  .notif-type-btn.active{background:var(--ink-solid);color:#fff;border-color:var(--ink-solid);}
+  .notif-type-count{font-size:10.5px;font-weight:700;background:var(--paper);color:var(--ink-soft);border-radius:10px;padding:0 6px;}
+  .notif-type-btn.active .notif-type-count{background:rgba(255,255,255,.3);color:#fff;}
+  .notif-meal-section{margin-top:16px;}
+  .notif-meal-section:first-of-type{margin-top:0;}
+  .notif-meal-title{font-size:12.5px;font-weight:700;color:var(--ink-soft);display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed var(--line);}
+  .notif-meal-badge{font-size:10px;font-weight:700;color:var(--outside);background:var(--outside-bg);border-radius:10px;padding:0 6px;}
 
   .tutorial-overlay{position:fixed;inset:0;z-index:80;pointer-events:auto;background:rgba(6,16,26,.82);display:none;}
   .tutorial-card{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(420px,92vw);max-height:88vh;overflow-y:auto;background:var(--paper);border-radius:14px;padding:20px;box-shadow:0 14px 44px rgba(0,0,0,.4);z-index:81;display:none;flex-direction:column;}
@@ -390,7 +391,7 @@
 <div class="modal-bg" id="notif-bg">
   <div class="notif-panel">
     <h3>🔔 退餐／以後不定通知</h3>
-    <div class="sub">列出目前所有「退餐」與「以後這天都不定」紀錄（不含正常訂餐／葷素選擇），用標籤區分兩種類型；依「餐點日期」分週整理，每一週都可以自行展開／收合，本週（含未來週）預設展開，比較早的週次預設收合。點通知可以跳到當天並標示座號；勾選代表已經處理過這筆（所有伙委共用同一份資料，任何人勾選後大家都看得到）。打開這個視窗會把目前看到的都標記為已讀（已讀狀態只存在你自己的裝置上）。</div>
+    <div class="sub">上面按鈕切換要看「退餐」還是「以後不定」，下面依午餐／晚餐分區直接列出（不用另外展開）。點通知可以跳到當天並標示座號；勾選代表已經處理過這筆（所有伙委共用同一份資料，任何人勾選後大家都看得到）。打開這個視窗會把目前看到的都標記為已讀（已讀狀態只存在你自己的裝置上）。</div>
     <div id="notif-list-wrap"></div>
     <div class="notif-close"><button class="btn btn-ghost" id="notif-close-btn">關閉</button></div>
   </div>
@@ -546,6 +547,7 @@ const WD = ['日','一','二','三','四','五','六'];
 const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐', recur:'以後不定'};
 const MEAL_LABEL = {lunch:'午餐', dinner:'晚餐'};
 const NOTIF_SEEN_KEY = 'cancelNotifLastSeen';
+let notifTypeFilter = 'cancel'; // 'cancel'（退餐）| 'recur'（以後不定）：通知視窗上方按鈕決定目前要看哪一種
 // updatedAt 欄位現在改用 Firestore serverTimestamp()（安全性：防止有人直接用
 // SDK 偽造送出時間，見下方 firestore.rules 的 request.time 檢查），讀出來的
 // 型別會是 Firestore Timestamp 物件（有 .toMillis()），不是字串。舊資料（規則
@@ -651,14 +653,11 @@ function updateBellBadge(){
 }
 function renderNotifRow(n){
   const processed = !!n.processed;
-  const isRecur = n.type==='recur';
-  const tagLabel = isRecur ? '以後不定' : '退餐';
-  const actionText = isRecur ? '選擇以後這天都不定' : '退餐';
   return `
-      <div class="notif-row ${processed?'processed':''} ${isRecur?'recur-type':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
+      <div class="notif-row ${processed?'processed':''} ${n.type==='recur'?'recur-type':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
         <label class="notif-check" title="標記為已處理（所有伙委共用）"><input type="checkbox" data-action="toggle-notif-processed" data-key="${escapeHtml(n.key)}" ${processed?'checked':''}></label>
         <div class="notif-info">
-          <span class="notif-main"><span class="notif-tag ${isRecur?'tag-recur':'tag-cancel'}">${tagLabel}</span>${escapeHtml(n.date)}（週${WD[parseDate(n.date).getDay()]}）・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))} ${actionText}</span>
+          <span class="notif-main">${escapeHtml(n.date)}（週${WD[parseDate(n.date).getDay()]}）・座號 ${escapeHtml(String(n.label))}</span>
           <span class="notif-time">${n.updatedAtMs ? new Date(n.updatedAtMs).toLocaleString('zh-TW') : ''}</span>
         </div>
       </div>`;
@@ -672,33 +671,43 @@ function renderNotifPanel(){
     updateBellBadge();
     return;
   }
-  // 全部依「餐點日期」分週整理成一個一個可以自行展開/收合的區塊（<details>），
-  // 不再是只有本週攤平＋以前收合兩種固定狀態：本週（含未來週）預設展開，
-  // 比較早的週次預設收合，伙委也可以自己點開／收合任何一週。每個區塊內部
-  // 再依日期→午晚餐→座號排序，方便照時間順序處理。
-  const curWeek = weekKey(todayStr());
-  const weeks={};
-  list.forEach(n=>{ const wk=weekKey(n.date); (weeks[wk]=weeks[wk]||[]).push(n); });
-  Object.keys(weeks).forEach(wk=>{
-    weeks[wk].sort((a,b)=>{
+
+  // 已讀分界點永遠用「全部」（退餐＋以後不定）裡最新一筆的時間來算，不受
+  // 目前篩選按鈕選了哪一種影響，這樣切換篩選鈕不會不小心把另一種的未讀
+  // 訊息也標記成已讀。
+  setNotifLastSeen(list[0].updatedAtMs);
+  updateBellBadge();
+
+  const cancelCount = list.filter(n=>n.type==='cancel').length;
+  const recurCount = list.filter(n=>n.type==='recur').length;
+  const filterBarHtml = `
+  <div class="notif-type-filter">
+    <button type="button" class="notif-type-btn ${notifTypeFilter==='cancel'?'active':''}" data-action="set-notif-type" data-type="cancel">退餐<span class="notif-type-count">${cancelCount}</span></button>
+    <button type="button" class="notif-type-btn ${notifTypeFilter==='recur'?'active':''}" data-action="set-notif-type" data-type="recur">以後不定<span class="notif-type-count">${recurCount}</span></button>
+  </div>`;
+
+  // 篩選出目前選定的類型後，直接依「午餐／晚餐」分成兩區各自列出（不用像
+  // 之前依週次收合／展開），區內依日期排序，方便伙委一眼看到某一餐有哪些
+  // 座號需要留意。
+  const filtered = list.filter(n=>n.type===notifTypeFilter);
+  const byMeal = {lunch:[], dinner:[]};
+  filtered.forEach(n=>{ (byMeal[n.meal]=byMeal[n.meal]||[]).push(n); });
+  ['lunch','dinner'].forEach(m=>{
+    byMeal[m].sort((a,b)=>{
       if(a.date!==b.date) return a.date.localeCompare(b.date);
-      if(a.meal!==b.meal) return a.meal==='lunch' ? -1 : 1;
       return String(a.label).localeCompare(String(b.label));
     });
   });
-  const weekKeys=Object.keys(weeks).sort((a,b)=>b.localeCompare(a));
-  const html = weekKeys.map(wk=>{
-    const isCurrentOrFuture = wk >= curWeek;
+  const mealSectionHtml = (mealKey, mealLabel)=>{
+    const items=byMeal[mealKey]||[];
     return `
-    <details class="notif-week-group" ${isCurrentOrFuture?'open':''}>
-      <summary>${weekLabel(wk)}${wk===curWeek?'（本週）':''}<span class="notif-week-badge">${weeks[wk].length}</span></summary>
-      <div class="notif-list">${weeks[wk].map(renderNotifRow).join('')}</div>
-    </details>`;
-  }).join('');
-  wrap.innerHTML = html;
-  // 標記為已讀：用目前列表中最新的一筆時間當作「已看過」的分界點
-  setNotifLastSeen(list[0].updatedAtMs);
-  updateBellBadge();
+    <div class="notif-meal-section">
+      <div class="notif-meal-title">${mealLabel}<span class="notif-meal-badge">${items.length}</span></div>
+      ${items.length ? `<div class="notif-list">${items.map(renderNotifRow).join('')}</div>` : `<div class="other-label">目前沒有這個時段的紀錄</div>`}
+    </div>`;
+  };
+
+  wrap.innerHTML = filterBarHtml + mealSectionHtml('lunch','🍱 午餐') + mealSectionHtml('dinner','🌙 晚餐');
 }
 function jumpToCancelEntry(date, meal, label){
   document.getElementById('notif-bg').classList.remove('show');
@@ -2557,6 +2566,12 @@ document.getElementById('bell-btn').addEventListener('click',()=>{
   document.getElementById('notif-bg').classList.add('show');
 });
 document.getElementById('notif-list-wrap').addEventListener('click', async (ev)=>{
+  const typeBtn = ev.target.closest('[data-action="set-notif-type"]');
+  if(typeBtn){
+    notifTypeFilter = typeBtn.dataset.type;
+    renderNotifPanel();
+    return;
+  }
   const checkEl = ev.target.closest('[data-action="toggle-notif-processed"]');
   if(checkEl){
     ev.stopPropagation();
