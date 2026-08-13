@@ -356,58 +356,6 @@
   #egg-overlay.show{display:flex;animation:egg-flash 900ms ease-out forwards;}
   #egg-overlay img{max-width:80%;max-height:80%;object-fit:contain;opacity:0.7;}
   @keyframes egg-flash{0%{opacity:0;}8%{opacity:1;}75%{opacity:1;}100%{opacity:0;}}
-
-  #rain-glass-canvas{position:fixed;inset:0;z-index:45;pointer-events:none;display:none;}
-  /* 純雨滴：畫布背景完全透明（見 JS 的 gl.clearColor(0,0,0,0) + alpha 混合），
-     沒有折射、沒有另外畫的流動背景，雨滴以外的地方就是真實網頁內容本身。
-     畫布疊在所有內容「上面」（但在 modal 之下，z-index:45 < modal 的 50），
-     視覺上就是螢幕/玻璃外面在下雨。卡片本身只留一點淺淺的玻璃材質感：
-     半透明底、很輕的模糊、外加一道會緩慢掃過表面的高光，這是 Apple Liquid
-     Glass 卡片材質該有的樣子，跟畫布上的雨滴是兩件事。*/
-  body.rain-glass-mode .paper,
-  body.rain-glass-mode .date-card,
-  body.rain-glass-mode .event-card,
-  body.rain-glass-mode .panel,
-  body.rain-glass-mode .overview,
-  body.rain-glass-mode .add-bar,
-  body.rain-glass-mode .meal-card,
-  body.rain-glass-mode .empty-state,
-  body.rain-glass-mode .confirm-panel,
-  body.rain-glass-mode .notif-panel,
-  body.rain-glass-mode .gmap-modal-box{
-    position:relative;
-    overflow:hidden;
-    background:rgba(255,255,255,.07) !important;
-    backdrop-filter:blur(9px) saturate(160%);
-    -webkit-backdrop-filter:blur(9px) saturate(160%);
-    border:1px solid rgba(255,255,255,.28);
-    box-shadow:0 8px 28px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.35);
-  }
-  body.rain-glass-mode .paper::before,
-  body.rain-glass-mode .date-card::before,
-  body.rain-glass-mode .event-card::before,
-  body.rain-glass-mode .panel::before,
-  body.rain-glass-mode .overview::before{
-    content:'';
-    position:absolute;
-    inset:-40%;
-    background:linear-gradient(115deg, transparent 40%, rgba(255,255,255,.16) 48%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.16) 52%, transparent 60%);
-    animation:liquid-glass-sheen 7s ease-in-out infinite;
-    pointer-events:none;
-  }
-  @keyframes liquid-glass-sheen{
-    0%,100%{ transform:translate(-30%,-10%) rotate(0deg); }
-    50%{ transform:translate(10%,10%) rotate(3deg); }
-  }
-  body.rain-glass-mode .meal-card.lunch,
-  body.rain-glass-mode .meal-card.dinner{ background:rgba(255,255,255,.05) !important; }
-  body.rain-glass-mode .tab-btn,
-  body.rain-glass-mode .btn-ghost,
-  body.rain-glass-mode .chip-summary,
-  body.rain-glass-mode .number-cell{
-    backdrop-filter:blur(6px);
-    -webkit-backdrop-filter:blur(6px);
-  }
 </style>
 </head>
 <body>
@@ -432,7 +380,6 @@
     <button class="tutorial-link-btn" id="tutorial-replay-btn" style="display:none;">新手教學</button>
     <button class="bell-btn" id="bell-btn" title="退餐／以後不定通知（伙委）" style="display:none;">🔔<span class="bell-badge" id="bell-badge">0</span></button>
     <button class="gear-btn" id="gear-btn" title="座號設定（伙委）" style="display:none;">⚙️</button>
-    <button class="gear-btn" id="student-gear-btn" title="設定" style="display:none;">⚙️</button>
   </div>
 
   <div class="tab-bar" id="tab-bar" style="display:none;">
@@ -506,21 +453,7 @@
       <div class="sub" style="margin:0 0 8px;">把舊版「一人一份子文件」的點餐紀錄（lunch_choice/dinner_choice）搬進新版合併欄位（entries 文件的 lunch.choices/dinner.choices）。只需要按一次，重複按也不會蓋掉已經搬移過的資料，可以放心多按幾次直到看到「搬移完成」。</div>
       <button class="btn btn-ghost" id="migrate-choices-btn" type="button">搬移舊點餐資料</button>
     </div>
-    <div class="row" style="border-top:1px dashed var(--line);padding-top:14px;">
-      <label>🌧️ 彩蛋</label>
-      <div class="sub" style="margin:0 0 8px;">液態玻璃下雨特效，雨滴即時運算＋整面玻璃霧化，純視覺效果、超吃效能、跟資料完全無關，關掉就會恢復正常，離開頁面也不會保存這個設定。</div>
-      <button class="btn btn-outside" id="toggle-rain-glass-btn" type="button">切換液態玻璃下雨模式</button>
-    </div>
     <div class="actions"><button class="btn btn-ghost" id="settings-cancel">取消</button><button class="btn btn-primary" id="settings-save">儲存</button></div>
-  </div>
-</div>
-
-<div class="modal-bg" id="student-settings-bg">
-  <div class="panel">
-    <h3>設定</h3>
-    <div class="sub">🌧️ 液態玻璃下雨特效，雨滴即時運算＋整面玻璃霧化，純視覺效果、超吃效能，跟任何資料都無關，關掉就會恢復正常，離開頁面也不會保存這個設定。</div>
-    <button class="btn btn-outside" id="toggle-rain-glass-btn-student" type="button" style="width:100%;">切換液態玻璃下雨模式</button>
-    <div class="actions" style="margin-top:14px;"><button class="btn btn-ghost" id="student-settings-close">關閉</button></div>
   </div>
 </div>
 
@@ -1209,7 +1142,6 @@ function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); un
 
 function teardownState(){
   teardownListeners();
-  if(typeof stopRainGlass==='function') stopRainGlass();
   entries={}; events={}; eventMenu={}; eventOrders={};
   eventRecommendations={};
   studentsRoster={}; staffList={}; eventCoordinators={}; recurringSkips={}; draftChoice={}; staffDraft={}; eventOrderDraft={};
@@ -1237,7 +1169,6 @@ function applyRoleUI(){
   else if(role==='student') label = (isCoordinatorActive()?'外食訂購人':'同學')+'・座號 '+studentId;
   document.getElementById('who-label').textContent = label;
   document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-block' : 'none';
-  document.getElementById('student-gear-btn').style.display = role==='student' ? 'inline-block' : 'none';
   document.getElementById('bell-btn').style.display = role==='staff' ? 'inline-block' : 'none';
   document.getElementById('tutorial-replay-btn').style.display = role ? 'inline-block' : 'none';
   document.getElementById('tab-bar').style.display = role ? 'flex' : 'none';
@@ -2691,16 +2622,6 @@ document.getElementById('gear-btn').addEventListener('click',()=>{
   fetchRecurringSkips();
 });
 
-document.getElementById('student-gear-btn').addEventListener('click',()=>{
-  document.getElementById('student-settings-bg').classList.add('show');
-});
-document.getElementById('student-settings-close').addEventListener('click',()=>{
-  document.getElementById('student-settings-bg').classList.remove('show');
-});
-document.getElementById('student-settings-bg').addEventListener('click',(ev)=>{
-  if(ev.target.id==='student-settings-bg') document.getElementById('student-settings-bg').classList.remove('show');
-});
-
 document.getElementById('bell-btn').addEventListener('click',()=>{
   renderNotifPanel();
   document.getElementById('notif-bg').classList.add('show');
@@ -2819,292 +2740,6 @@ function triggerEasterEgg(){
 document.getElementById('egg-overlay').addEventListener('click', ()=>{
   document.getElementById('egg-overlay').classList.remove('show');
 });
-
-// ============================================================
-// 🌧️ 彩蛋：液態玻璃下雨模式（WebGL 版）。
-//
-// 真實物理（JS 端每一幀計算）：雨滴不是憑空出現往下掉，而是先在畫面上
-// 「凝結成核」（很小、幾乎不動），慢慢長大；長到超過某個半徑（模擬表面
-// 張力撐不住重量）才會「脫離」開始往下滑動；滑動速度會隨著半徑增加（越
-// 大顆的水滴，重力克服空氣阻力的比例越高，滑落得越快，這是真實物理現象，
-// 不是隨機數字）；滑動時會左右輕微擺動（模擬玻璃表面不平整）、留下逐漸
-// 變細的拖尾；兩滴水滴距離夠近時會合併成一滴更大的（合併時用面積守恆
-// r²相加 換算新半徑，位置用面積加權平均），這些都是逐幀真的算出來的，
-// 不是預錄好的動畫。
-//
-// 畫面呈現（GPU 端 fragment shader 每個像素即時計算）：每一滴水滴＋拖尾
-// 都被丟進 shader 當作 metaball（隱函數場），場強度算出水滴的表面形狀；
-// 用場的梯度算出表面法向量，只拿來做基本明暗＋鏡面高光，讓水滴看起來是
-// 立體的圓珠，不折射任何背景、也沒有另外畫一層會動的場景——單純就是
-// 雨滴本身。雨滴以外的地方輸出全透明（alpha 混合），直接疊在真實網頁
-// 畫面上面，卡片本身另外用 CSS 給一點淺淺的玻璃材質感（半透明底＋輕模糊
-// ＋緩慢掃過的高光），跟畫布上的雨滴是兩件事、互不干擾。
-// ============================================================
-const RAIN_MAX_BLOBS = 140; // 水滴 + 拖尾點 上限，丟進 shader 的粒子總數上限
-let rainGlassCanvas=null, rainGL=null, rainGlassActive=false, rainGlassAnimId=null;
-let rainProgram=null, rainDropTex=null, rainPositionBuf=null;
-let rainUniforms={};
-let rainDrops=[]; // {x,y,r,vy,mobile,trail:[{x,y,r}]}
-let rainLastFrameTime=0;
-let rainDropDataArr=null; // Float32Array 上傳給 GPU 的 (x,y,r,0) 打包資料
-
-const RAIN_VERT_SRC = `
-attribute vec2 aPos;
-void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }
-`;
-const RAIN_FRAG_SRC = `
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-uniform vec2 uResolution;
-uniform sampler2D uDropTex;
-uniform float uDropCount;
-uniform float uTexWidth;
-
-float field(vec2 p){
-  float total = 0.0;
-  for(int i=0;i<160;i++){
-    if(float(i) >= uDropCount) break;
-    vec2 uv = vec2((float(i)+0.5)/uTexWidth, 0.5);
-    vec4 d = texture2D(uDropTex, uv);
-    vec2 center = d.xy;
-    float r = d.z;
-    vec2 dp = center - p;
-    float dist2 = dot(dp,dp) + 1.0;
-    total += (r*r) / dist2;
-  }
-  return total;
-}
-
-void main(){
-  vec2 p = gl_FragCoord.xy;
-  float f = field(p);
-  if(f > 1.0){
-    // 只用場的梯度算表面法向量來做「這滴水看起來是圓的、有立體感」的基本
-    // 明暗＋高光，不折射任何背景畫面、也沒有另外畫一層會動的場景——單純
-    // 就是雨滴本身。
-    float eps = 1.4;
-    float fx = field(p+vec2(eps,0.0)) - field(p-vec2(eps,0.0));
-    float fy = field(p+vec2(0.0,eps)) - field(p-vec2(0.0,eps));
-    vec2 grad = vec2(fx, fy);
-    vec3 normal = normalize(vec3(-grad*0.02, 1.0));
-    vec3 lightDir = normalize(vec3(-0.35, 0.55, 0.75));
-    float diff = max(dot(normal, lightDir), 0.25);
-    float spec = pow(max(dot(normal, lightDir), 0.0), 45.0);
-    float rim = pow(1.0 - max(normal.z, 0.0), 3.0);
-    vec3 dropColor = vec3(0.72,0.83,0.97) * diff + vec3(1.0) * spec * 0.85 + vec3(0.55,0.72,0.95) * rim * 0.3;
-    float alpha = clamp((f-1.0)*1.4, 0.0, 1.0) * 0.5 + 0.4;
-    gl_FragColor = vec4(dropColor, alpha);
-  } else {
-    gl_FragColor = vec4(0.0);
-  }
-}
-`;
-
-function compileShader(gl, type, src){
-  const sh = gl.createShader(type);
-  gl.shaderSource(sh, src);
-  gl.compileShader(sh);
-  if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
-    console.error('[液態玻璃] shader 編譯失敗', gl.getShaderInfoLog(sh));
-    gl.deleteShader(sh);
-    return null;
-  }
-  return sh;
-}
-function initRainGL(){
-  const ctxAttrs = {alpha:true, premultipliedAlpha:false};
-  const gl = rainGlassCanvas.getContext('webgl', ctxAttrs) || rainGlassCanvas.getContext('experimental-webgl', ctxAttrs);
-  if(!gl) return null;
-  const floatExt = gl.getExtension('OES_texture_float');
-  if(!floatExt) return null; // 極少數老裝置不支援，優雅放棄，不強行退化成假效果
-  const vs = compileShader(gl, gl.VERTEX_SHADER, RAIN_VERT_SRC);
-  const fs = compileShader(gl, gl.FRAGMENT_SHADER, RAIN_FRAG_SRC);
-  if(!vs || !fs) return null;
-  const prog = gl.createProgram();
-  gl.attachShader(prog, vs);
-  gl.attachShader(prog, fs);
-  gl.linkProgram(prog);
-  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){
-    console.error('[液態玻璃] program 連結失敗', gl.getProgramInfoLog(prog));
-    return null;
-  }
-  gl.useProgram(prog);
-  // 雨滴以外的地方 shader 會輸出全透明，靠 alpha 混合疊在真實網頁畫面上面，
-  // 而不是整張畫布蓋一層不透明的背景。
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  gl.clearColor(0,0,0,0);
-
-  const posBuf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
-  const aPos = gl.getAttribLocation(prog, 'aPos');
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
-  const dropTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, dropTex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-  rainGL = gl;
-  rainProgram = prog;
-  rainPositionBuf = posBuf;
-  rainDropTex = dropTex;
-  rainUniforms = {
-    uResolution: gl.getUniformLocation(prog, 'uResolution'),
-    uDropTex: gl.getUniformLocation(prog, 'uDropTex'),
-    uDropCount: gl.getUniformLocation(prog, 'uDropCount'),
-    uTexWidth: gl.getUniformLocation(prog, 'uTexWidth')
-  };
-  rainDropDataArr = new Float32Array(RAIN_MAX_BLOBS*4);
-  return gl;
-}
-function resizeRainCanvas(){
-  if(!rainGlassCanvas || !rainGL) return;
-  const dpr = Math.min(window.devicePixelRatio||1, 1.5);
-  rainGlassCanvas.width = Math.floor(window.innerWidth*dpr);
-  rainGlassCanvas.height = Math.floor(window.innerHeight*dpr);
-  rainGL.viewport(0,0,rainGlassCanvas.width, rainGlassCanvas.height);
-}
-
-// ---- 物理模擬：每一滴水滴的「一生」都在這裡逐幀算出來 ----
-function spawnCondensationDrop(w,h){
-  return { x: Math.random()*w, y: Math.random()*h, r: 1.2+Math.random()*1.6, vy:0, mobile:false, trail:[] };
-}
-function stepRainPhysics(dt, w, h){
-  dt = Math.min(dt, 0.05); // 避免分頁切走再切回來時 dt 暴衝，物理直接爆掉
-  // 1) 凝結成核：畫面上持續冒出新的小水滴（隨機位置，非只從頂端），數量上限
-  //    受 RAIN_MAX_BLOBS 間接限制（下面會依總 blob 數量節流）。
-  const totalBlobs = rainDrops.reduce((s,d)=>s+1+d.trail.length, 0);
-  if(totalBlobs < RAIN_MAX_BLOBS-6 && Math.random() < 0.55){
-    rainDrops.push(spawnCondensationDrop(w,h));
-  }
-  for(const d of rainDrops){
-    if(!d.mobile){
-      // 2) 緩慢長大 + 環境微擾動（模擬空氣中的水氣持續凝結、輕微震動）
-      d.r += dt*3.2;
-      d.x += (Math.random()-0.5)*4*dt;
-      // 3) 表面張力撐不住重量了 → 脫離、開始滑動（真正決定「何時開始下滑」
-      //    的是水滴大小而不是隨機時間，這才是真實物理該有的行為）
-      if(d.r > 5.5 + Math.random()*3){ d.mobile = true; }
-    } else {
-      // 4) 滑動中：終端速度隨半徑平方成長（越重的水滴，重力相對空氣阻力
-      //    的優勢越大，會滑得越快），用一階緩動逼近終端速度模擬「阻力」。
-      const terminalV = 30 + d.r*d.r*4.5;
-      d.vy += (terminalV - d.vy) * Math.min(1, dt*3.5);
-      d.y += d.vy*dt;
-      d.x += Math.sin(d.y*0.045 + d.r)*6*dt; // 玻璃表面不平整造成的左右擺動
-      // 5) 留下拖尾：拖尾點會隨時間收縮消失，畫出真實水滴滑落會有的水痕
-      d.trail.push({x:d.x, y:d.y-d.r*0.6, r:d.r*0.4});
-      if(d.trail.length > 26) d.trail.shift();
-    }
-    for(const t of d.trail){ t.r *= Math.pow(0.9, dt*60); }
-    d.trail = d.trail.filter(t=>t.r>0.25);
-  }
-  // 6) 碰撞合併：兩滴水滴夠近就融合成一滴更大的（面積守恆），這是水滴類
-  //    模擬的招牌行為，也是最容易讓人覺得「這是真的」的細節。
-  for(let i=0;i<rainDrops.length;i++){
-    for(let j=i+1;j<rainDrops.length;j++){
-      const a=rainDrops[i], b=rainDrops[j];
-      if(!a.mobile && !b.mobile) continue;
-      const dx=a.x-b.x, dy=a.y-b.y;
-      const dist=Math.sqrt(dx*dx+dy*dy);
-      if(dist < (a.r+b.r)*0.82){
-        const areaA=a.r*a.r, areaB=b.r*b.r;
-        a.x=(a.x*areaA+b.x*areaB)/(areaA+areaB);
-        a.y=Math.max(a.y,b.y);
-        a.r=Math.min(Math.sqrt(areaA+areaB), 11);
-        a.vy=Math.max(a.vy,b.vy);
-        a.mobile=true;
-        a.trail=a.trail.concat(b.trail).slice(-26);
-        rainDrops.splice(j,1); j--;
-      }
-    }
-  }
-  // 7) 滑出畫面底部的水滴移除，回收名額給新的凝結水滴
-  rainDrops = rainDrops.filter(d=> d.y-d.r < h+30);
-}
-
-function rainGlassFrame(ts){
-  if(!rainGlassActive || !rainGL) return;
-  const dt = rainLastFrameTime ? (ts-rainLastFrameTime)/1000 : 0.016;
-  rainLastFrameTime = ts;
-  const w = rainGlassCanvas.width, h = rainGlassCanvas.height;
-
-  stepRainPhysics(dt, w, h);
-
-  // 把水滴本體＋所有拖尾點打包成一份平面陣列上傳給 GPU（這就是每一幀都在
-  // 變的「真資料」，shader 端完全沒有預存或預錄的形狀）。
-  let idx=0;
-  for(const d of rainDrops){
-    if(idx>=RAIN_MAX_BLOBS) break;
-    rainDropDataArr[idx*4]=d.x; rainDropDataArr[idx*4+1]=h-d.y; rainDropDataArr[idx*4+2]=d.r*1.15; rainDropDataArr[idx*4+3]=0;
-    idx++;
-    for(const t of d.trail){
-      if(idx>=RAIN_MAX_BLOBS) break;
-      rainDropDataArr[idx*4]=t.x; rainDropDataArr[idx*4+1]=h-t.y; rainDropDataArr[idx*4+2]=t.r; rainDropDataArr[idx*4+3]=0;
-      idx++;
-    }
-  }
-  for(let k=idx;k<RAIN_MAX_BLOBS;k++){ rainDropDataArr[k*4]=-9999; rainDropDataArr[k*4+1]=-9999; rainDropDataArr[k*4+2]=0; rainDropDataArr[k*4+3]=0; }
-
-  const gl = rainGL;
-  gl.useProgram(rainProgram);
-  gl.viewport(0,0,w,h);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.uniform2f(rainUniforms.uResolution, w, h);
-  gl.uniform1f(rainUniforms.uDropCount, idx);
-  gl.uniform1f(rainUniforms.uTexWidth, RAIN_MAX_BLOBS);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, rainDropTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, RAIN_MAX_BLOBS, 1, 0, gl.RGBA, gl.FLOAT, rainDropDataArr);
-  gl.uniform1i(rainUniforms.uDropTex, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, rainPositionBuf);
-  gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-  rainGlassAnimId = requestAnimationFrame(rainGlassFrame);
-}
-function startRainGlass(){
-  if(!rainGlassCanvas){
-    rainGlassCanvas = document.createElement('canvas');
-    rainGlassCanvas.id = 'rain-glass-canvas';
-    document.body.appendChild(rainGlassCanvas);
-    if(!initRainGL()){
-      showToast('這台裝置的瀏覽器不支援 WebGL 即時折射，無法啟動這個彩蛋');
-      rainGlassCanvas.remove();
-      rainGlassCanvas = null;
-      return;
-    }
-    window.addEventListener('resize', resizeRainCanvas);
-  }
-  resizeRainCanvas();
-  rainDrops = Array.from({length: 24}, ()=>spawnCondensationDrop(rainGlassCanvas.width, rainGlassCanvas.height));
-  document.body.classList.add('rain-glass-mode');
-  rainGlassCanvas.style.display = 'block';
-  rainGlassActive = true;
-  rainLastFrameTime = 0;
-  rainGlassAnimId = requestAnimationFrame(rainGlassFrame);
-}
-function stopRainGlass(){
-  rainGlassActive = false;
-  if(rainGlassAnimId) cancelAnimationFrame(rainGlassAnimId);
-  rainGlassAnimId = null;
-  document.body.classList.remove('rain-glass-mode');
-  if(rainGlassCanvas) rainGlassCanvas.style.display = 'none';
-}
-function toggleRainGlass(){
-  if(rainGlassActive){ stopRainGlass(); showToast('已關閉液態玻璃下雨模式'); }
-  else{ startRainGlass(); if(rainGlassActive) showToast('液態玻璃下雨模式啟動：真實水滴物理＋WebGL 即時折射 🌧️'); }
-}
-document.getElementById('toggle-rain-glass-btn').addEventListener('click', toggleRainGlass);
-document.getElementById('toggle-rain-glass-btn-student').addEventListener('click', toggleRainGlass);
-
 
 // ============================================================
 // 一次性資料搬移：舊版「entries/{date}/lunch_choice、dinner_choice」子集合
