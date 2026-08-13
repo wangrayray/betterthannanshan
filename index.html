@@ -1538,6 +1538,11 @@ function orderTotal(order, menu){
     return s + (mi ? mi.price*qty : 0);
   },0);
 }
+// 這個品項在這個外食活動裡，全部人（座號同學＋其他訂購人）加起來總共被
+// 選了幾份——用來讓伙委/同學一眼看出哪個品項最熱門，跟個別訂單無關。
+function menuItemOrderedQty(eventId, itemId){
+  return (eventOrders[eventId]||[]).reduce((s,o)=> s + ((o.items && o.items[itemId]) || 0), 0);
+}
 // ============================================================
 // 外食訂購「自己下單」的本機暫存（+/- 按鈕 + 確定送出），跟退餐選擇的
 // draftChoice 是同一套精神：按 +/- 只改本機畫面，不會馬上打 Firestore，
@@ -1616,9 +1621,10 @@ function renderOrderStepperRows(eventId, label, menu){
   const items=displayOrderItems(eventId, label);
   return menu.map(mi=>{
     const qty=items[mi.id]||0;
+    const totalQty=menuItemOrderedQty(eventId, mi.id);
     return `
     <div class="outside-row">
-      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}</span>
+      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}<span class="other-label" style="margin:0 0 0 6px;display:inline;">共${totalQty}份</span></span>
       <span class="outside-currency">NT$${mi.price}</span>
       <div class="qty-stepper">
         <button type="button" class="qty-step-btn" data-action="order-qty-step" data-event="${eventId}" data-label="${label}" data-item="${mi.id}" data-delta="-1" ${qty<=0?'disabled':''} aria-label="減少${escapeHtml(mi.name)}數量">－</button>
@@ -2164,7 +2170,7 @@ function renderStaffEventCard(ev){
   const unpaidCount = orders.length - paidCount;
   const paidTotal = paidOrders.reduce((s,o)=>s+orderTotal(o, menu),0);
 
-  const menuChips = menu.map(mi=>`<span class="name-chip">${escapeHtml(mi.name)} · NT$${mi.price}<button data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}">×</button></span>`).join('');
+  const menuChips = menu.map(mi=>`<span class="name-chip">${escapeHtml(mi.name)} · NT$${mi.price} · 共${menuItemOrderedQty(ev.id,mi.id)}份<button data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}">×</button></span>`).join('');
 
   // 外食訂購人（同學身份、但有管理權限）本人也在座號名冊裡，除了管理活動，
   // 也應該能像其他同學一樣，替自己選品項與數量下單。伙委（role==='staff'）
