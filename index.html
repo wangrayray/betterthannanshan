@@ -357,16 +357,13 @@
   #egg-overlay img{max-width:80%;max-height:80%;object-fit:contain;opacity:0.7;}
   @keyframes egg-flash{0%{opacity:0;}8%{opacity:1;}75%{opacity:1;}100%{opacity:0;}}
 
-  #rain-glass-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;display:none;}
-  body.rain-glass-mode{background:linear-gradient(160deg,#1b2836,#0d1620 60%,#050a10);transition:background 1.2s ease;}
-  html[data-theme="dark"] body.rain-glass-mode{background:linear-gradient(160deg,#05080c,#02040a);}
-  body.rain-glass-mode .wrap{position:relative;z-index:1;}
-  /* 真正的折射運算是下面那片 WebGL 畫布在做（見 JS 的 field()/refractedUV），
-     卡片本身不假裝自己在折射任何東西，只給一點淺淺的玻璃材質感：半透明底、
-     很輕的模糊（只是讓卡片跟背景分層，不是拿來混充折射效果）、外加一道會
-     緩慢掃過表面的高光（::before 對角漸層），這才是 Apple Liquid Glass
-     真正在做的事——材質本身只有反光/透光，光學折射交給它背後真正在動的
-     那層畫面。*/
+  #rain-glass-canvas{position:fixed;inset:0;z-index:45;pointer-events:none;display:none;}
+  /* 純雨滴：畫布背景完全透明（見 JS 的 gl.clearColor(0,0,0,0) + alpha 混合），
+     沒有折射、沒有另外畫的流動背景，雨滴以外的地方就是真實網頁內容本身。
+     畫布疊在所有內容「上面」（但在 modal 之下，z-index:45 < modal 的 50），
+     視覺上就是螢幕/玻璃外面在下雨。卡片本身只留一點淺淺的玻璃材質感：
+     半透明底、很輕的模糊、外加一道會緩慢掃過表面的高光，這是 Apple Liquid
+     Glass 卡片材質該有的樣子，跟畫布上的雨滴是兩件事。*/
   body.rain-glass-mode .paper,
   body.rain-glass-mode .date-card,
   body.rain-glass-mode .event-card,
@@ -2826,28 +2823,22 @@ document.getElementById('egg-overlay').addEventListener('click', ()=>{
 // ============================================================
 // 🌧️ 彩蛋：液態玻璃下雨模式（WebGL 版）。
 //
-// 上一版是用 2D canvas 畫幾條會下墜的直線，配合 CSS backdrop-filter 模糊
-// ——說穿了就是「假的」，看起來只是模糊而已，沒有真正的光學折射。這一版
-// 換成 WebGL：
+// 真實物理（JS 端每一幀計算）：雨滴不是憑空出現往下掉，而是先在畫面上
+// 「凝結成核」（很小、幾乎不動），慢慢長大；長到超過某個半徑（模擬表面
+// 張力撐不住重量）才會「脫離」開始往下滑動；滑動速度會隨著半徑增加（越
+// 大顆的水滴，重力克服空氣阻力的比例越高，滑落得越快，這是真實物理現象，
+// 不是隨機數字）；滑動時會左右輕微擺動（模擬玻璃表面不平整）、留下逐漸
+// 變細的拖尾；兩滴水滴距離夠近時會合併成一滴更大的（合併時用面積守恆
+// r²相加 換算新半徑，位置用面積加權平均），這些都是逐幀真的算出來的，
+// 不是預錄好的動畫。
 //
-// 1. 真實物理（JS 端每一幀計算）：雨滴不是憑空出現往下掉，而是先在畫面上
-//    「凝結成核」（很小、幾乎不動），慢慢long大；長到超過某個半徑（模擬
-//    表面張力撐不住重量）才會「脫離」開始往下滑動；滑動速度會隨著半徑增加
-//    （越大顆的水滴，重力克服空氣阻力的比例越高，滑落得越快，這是真實物理
-//    現象，不是隨機數字）；滑動時會左右輕微擺動（模擬玻璃表面不平整）、
-//    留下逐漸變細的拖尾；兩滴水滴距離夠近時會合併成一滴更大的（合併時用
-//    面積守恆 r²相加 換算新半徑，位置用面積加權平均），這些都是逐幀真的算
-//    出來的，不是預錄好的動畫。
-//
-// 2. 真正的折射（GPU 端 fragment shader 每個像素即時計算）：每一滴水滴＋
-//    拖尾都被丟進 shader 當作 metaball（隱函數場），場強度算出水滴的表面
-//    形狀；用場的梯度算出表面法向量，拿法向量去「彎折」背景取樣座標——
-//    這就是真正的折射（光線通過曲面水滴時方向會偏折），不是單純模糊而已；
-//    同時用法向量跟假想光源算鏡面高光，讓水滴邊緣有真實的反光感。因為沒辦法
-//    即時把整個互動式的網頁畫面（Firestore 資料、輸入框等）當成材質即時
-//    截圖再折射（那樣做一幀要花好幾百毫秒，等於整個網站會凍住），所以折射
-//    的對象是同一個 shader 即時算出來的漸層/光斑背景，卡片本身則維持淺淺
-//    的玻璃感浮在上層，維持可讀性。
+// 畫面呈現（GPU 端 fragment shader 每個像素即時計算）：每一滴水滴＋拖尾
+// 都被丟進 shader 當作 metaball（隱函數場），場強度算出水滴的表面形狀；
+// 用場的梯度算出表面法向量，只拿來做基本明暗＋鏡面高光，讓水滴看起來是
+// 立體的圓珠，不折射任何背景、也沒有另外畫一層會動的場景——單純就是
+// 雨滴本身。雨滴以外的地方輸出全透明（alpha 混合），直接疊在真實網頁
+// 畫面上面，卡片本身另外用 CSS 給一點淺淺的玻璃材質感（半透明底＋輕模糊
+// ＋緩慢掃過的高光），跟畫布上的雨滴是兩件事、互不干擾。
 // ============================================================
 const RAIN_MAX_BLOBS = 140; // 水滴 + 拖尾點 上限，丟進 shader 的粒子總數上限
 let rainGlassCanvas=null, rainGL=null, rainGlassActive=false, rainGlassAnimId=null;
@@ -2868,28 +2859,9 @@ precision highp float;
 precision mediump float;
 #endif
 uniform vec2 uResolution;
-uniform float uTime;
 uniform sampler2D uDropTex;
 uniform float uDropCount;
 uniform float uTexWidth;
-
-vec3 background(vec2 uv){
-  // 沒辦法即時折射真正的網頁內容，所以用同一個 shader 畫一片會緩慢流動的
-  // 深色夜景光斑當作「玻璃後面的世界」，讓水滴折射的東西是真的存在、會動
-  // 的畫面，而不是單一顏色。
-  vec3 col = mix(vec3(0.03,0.05,0.10), vec3(0.07,0.10,0.18), uv.y);
-  for(int i=0;i<6;i++){
-    float fi = float(i);
-    vec2 c = vec2(
-      0.5 + 0.42*sin(uTime*0.035 + fi*2.09),
-      0.5 + 0.42*cos(uTime*0.028 + fi*1.63)
-    );
-    float d = length((uv-c) * vec2(uResolution.x/uResolution.y, 1.0));
-    vec3 tint = 0.5 + 0.5*cos(vec3(0.0,2.0,4.0) + fi*1.3 + uTime*0.05);
-    col += tint * smoothstep(0.38, 0.0, d) * 0.22;
-  }
-  return col;
-}
 
 float field(vec2 p){
   float total = 0.0;
@@ -2908,27 +2880,25 @@ float field(vec2 p){
 
 void main(){
   vec2 p = gl_FragCoord.xy;
-  vec2 uv = p / uResolution;
-  vec3 base = background(uv);
   float f = field(p);
   if(f > 1.0){
-    // 用場的梯度（中央差分）當作水滴表面的法向量，這個法向量決定了：
-    // (a) 折射方向要往哪偏、偏多少 (b) 鏡面高光落在哪個角度——兩者都是
-    // 每個像素即時算出來的，會隨水滴移動、變大、合併而即時改變。
+    // 只用場的梯度算表面法向量來做「這滴水看起來是圓的、有立體感」的基本
+    // 明暗＋高光，不折射任何背景畫面、也沒有另外畫一層會動的場景——單純
+    // 就是雨滴本身。
     float eps = 1.4;
     float fx = field(p+vec2(eps,0.0)) - field(p-vec2(eps,0.0));
     float fy = field(p+vec2(0.0,eps)) - field(p-vec2(0.0,eps));
     vec2 grad = vec2(fx, fy);
-    vec2 refractedUV = uv - grad * 0.00075;
-    vec3 refracted = background(clamp(refractedUV, 0.0, 1.0));
-    vec3 normal = normalize(vec3(-grad*0.018, 1.0));
+    vec3 normal = normalize(vec3(-grad*0.02, 1.0));
     vec3 lightDir = normalize(vec3(-0.35, 0.55, 0.75));
-    float spec = pow(max(dot(normal, lightDir), 0.0), 40.0);
+    float diff = max(dot(normal, lightDir), 0.25);
+    float spec = pow(max(dot(normal, lightDir), 0.0), 45.0);
     float rim = pow(1.0 - max(normal.z, 0.0), 3.0);
-    vec3 dropColor = refracted * 1.18 + vec3(1.0) * spec * 0.9 + vec3(0.55,0.7,0.9) * rim * 0.25;
-    gl_FragColor = vec4(dropColor, 1.0);
+    vec3 dropColor = vec3(0.72,0.83,0.97) * diff + vec3(1.0) * spec * 0.85 + vec3(0.55,0.72,0.95) * rim * 0.3;
+    float alpha = clamp((f-1.0)*1.4, 0.0, 1.0) * 0.5 + 0.4;
+    gl_FragColor = vec4(dropColor, alpha);
   } else {
-    gl_FragColor = vec4(base, 1.0);
+    gl_FragColor = vec4(0.0);
   }
 }
 `;
@@ -2945,7 +2915,8 @@ function compileShader(gl, type, src){
   return sh;
 }
 function initRainGL(){
-  const gl = rainGlassCanvas.getContext('webgl') || rainGlassCanvas.getContext('experimental-webgl');
+  const ctxAttrs = {alpha:true, premultipliedAlpha:false};
+  const gl = rainGlassCanvas.getContext('webgl', ctxAttrs) || rainGlassCanvas.getContext('experimental-webgl', ctxAttrs);
   if(!gl) return null;
   const floatExt = gl.getExtension('OES_texture_float');
   if(!floatExt) return null; // 極少數老裝置不支援，優雅放棄，不強行退化成假效果
@@ -2961,6 +2932,11 @@ function initRainGL(){
     return null;
   }
   gl.useProgram(prog);
+  // 雨滴以外的地方 shader 會輸出全透明，靠 alpha 混合疊在真實網頁畫面上面，
+  // 而不是整張畫布蓋一層不透明的背景。
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.clearColor(0,0,0,0);
 
   const posBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
@@ -2982,7 +2958,6 @@ function initRainGL(){
   rainDropTex = dropTex;
   rainUniforms = {
     uResolution: gl.getUniformLocation(prog, 'uResolution'),
-    uTime: gl.getUniformLocation(prog, 'uTime'),
     uDropTex: gl.getUniformLocation(prog, 'uDropTex'),
     uDropCount: gl.getUniformLocation(prog, 'uDropCount'),
     uTexWidth: gl.getUniformLocation(prog, 'uTexWidth')
@@ -3082,8 +3057,8 @@ function rainGlassFrame(ts){
   const gl = rainGL;
   gl.useProgram(rainProgram);
   gl.viewport(0,0,w,h);
+  gl.clear(gl.COLOR_BUFFER_BIT);
   gl.uniform2f(rainUniforms.uResolution, w, h);
-  gl.uniform1f(rainUniforms.uTime, ts*0.001);
   gl.uniform1f(rainUniforms.uDropCount, idx);
   gl.uniform1f(rainUniforms.uTexWidth, RAIN_MAX_BLOBS);
   gl.activeTexture(gl.TEXTURE0);
