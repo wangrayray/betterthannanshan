@@ -227,6 +227,9 @@
   .confirmed-compare.drift{background:var(--danger-bg);border-color:var(--danger);color:var(--danger);}
   .confirmed-compare.drift b{color:var(--danger);}
   .confirmed-compare.none{opacity:.75;}
+  .cancel-process-block{margin-bottom:8px;}
+  .effective-order-note{font-size:11.5px;color:var(--mine);background:var(--paid-bg);border-radius:8px;padding:6px 10px;margin-top:4px;}
+  .effective-order-note b{color:var(--mine);}
   .pending-bar b{font-size:13px;}
   .pending-bar .btn{padding:5px 12px;font-size:12px;}
   .meal-summary{font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.7;}
@@ -353,6 +356,39 @@
   #egg-overlay.show{display:flex;animation:egg-flash 900ms ease-out forwards;}
   #egg-overlay img{max-width:80%;max-height:80%;object-fit:contain;opacity:0.7;}
   @keyframes egg-flash{0%{opacity:0;}8%{opacity:1;}75%{opacity:1;}100%{opacity:0;}}
+
+  #rain-glass-canvas{position:fixed;inset:0;z-index:40;pointer-events:none;display:none;}
+  body.rain-glass-mode{background:linear-gradient(160deg,#1b2836,#0d1620 60%,#050a10);transition:background 1.2s ease;}
+  html[data-theme="dark"] body.rain-glass-mode{background:linear-gradient(160deg,#05080c,#02040a);}
+  /* 故意在每一張卡片都疊上毛玻璃模糊＋半透明底色＋細緻高光邊框，模擬「液態
+     玻璃」隔著雨看畫面的感覺；同時每一幀 canvas 都在重繪雨滴，兩個效果疊在
+     一起對 GPU 負擔很大，這是刻意的（彩蛋本來就是拿來玩、不是拿來天天用的）。*/
+  body.rain-glass-mode .paper,
+  body.rain-glass-mode .date-card,
+  body.rain-glass-mode .event-card,
+  body.rain-glass-mode .panel,
+  body.rain-glass-mode .overview,
+  body.rain-glass-mode .add-bar,
+  body.rain-glass-mode .meal-card,
+  body.rain-glass-mode .empty-state,
+  body.rain-glass-mode .confirm-panel,
+  body.rain-glass-mode .notif-panel,
+  body.rain-glass-mode .gmap-modal-box{
+    background:rgba(255,255,255,.10) !important;
+    backdrop-filter:blur(22px) saturate(180%);
+    -webkit-backdrop-filter:blur(22px) saturate(180%);
+    border:1px solid rgba(255,255,255,.35);
+    box-shadow:0 8px 32px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.4);
+  }
+  body.rain-glass-mode .meal-card.lunch,
+  body.rain-glass-mode .meal-card.dinner{ background:rgba(255,255,255,.08) !important; }
+  body.rain-glass-mode .tab-btn,
+  body.rain-glass-mode .btn-ghost,
+  body.rain-glass-mode .chip-summary,
+  body.rain-glass-mode .number-cell{
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+  }
 </style>
 </head>
 <body>
@@ -377,6 +413,7 @@
     <button class="tutorial-link-btn" id="tutorial-replay-btn" style="display:none;">新手教學</button>
     <button class="bell-btn" id="bell-btn" title="退餐／以後不定通知（伙委）" style="display:none;">🔔<span class="bell-badge" id="bell-badge">0</span></button>
     <button class="gear-btn" id="gear-btn" title="座號設定（伙委）" style="display:none;">⚙️</button>
+    <button class="gear-btn" id="student-gear-btn" title="設定" style="display:none;">⚙️</button>
   </div>
 
   <div class="tab-bar" id="tab-bar" style="display:none;">
@@ -450,7 +487,21 @@
       <div class="sub" style="margin:0 0 8px;">把舊版「一人一份子文件」的點餐紀錄（lunch_choice/dinner_choice）搬進新版合併欄位（entries 文件的 lunch.choices/dinner.choices）。只需要按一次，重複按也不會蓋掉已經搬移過的資料，可以放心多按幾次直到看到「搬移完成」。</div>
       <button class="btn btn-ghost" id="migrate-choices-btn" type="button">搬移舊點餐資料</button>
     </div>
+    <div class="row" style="border-top:1px dashed var(--line);padding-top:14px;">
+      <label>🌧️ 彩蛋</label>
+      <div class="sub" style="margin:0 0 8px;">液態玻璃下雨特效，雨滴即時運算＋整面玻璃霧化，純視覺效果、超吃效能、跟資料完全無關，關掉就會恢復正常，離開頁面也不會保存這個設定。</div>
+      <button class="btn btn-outside" id="toggle-rain-glass-btn" type="button">切換液態玻璃下雨模式</button>
+    </div>
     <div class="actions"><button class="btn btn-ghost" id="settings-cancel">取消</button><button class="btn btn-primary" id="settings-save">儲存</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="student-settings-bg">
+  <div class="panel">
+    <h3>設定</h3>
+    <div class="sub">🌧️ 液態玻璃下雨特效，雨滴即時運算＋整面玻璃霧化，純視覺效果、超吃效能，跟任何資料都無關，關掉就會恢復正常，離開頁面也不會保存這個設定。</div>
+    <button class="btn btn-outside" id="toggle-rain-glass-btn-student" type="button" style="width:100%;">切換液態玻璃下雨模式</button>
+    <div class="actions" style="margin-top:14px;"><button class="btn btn-ghost" id="student-settings-close">關閉</button></div>
   </div>
 </div>
 
@@ -1139,6 +1190,7 @@ function teardownListeners(){ unsubs.forEach(fn=>{ try{ fn(); }catch(e){} }); un
 
 function teardownState(){
   teardownListeners();
+  if(typeof stopRainGlass==='function') stopRainGlass();
   entries={}; events={}; eventMenu={}; eventOrders={};
   eventRecommendations={};
   studentsRoster={}; staffList={}; eventCoordinators={}; recurringSkips={}; draftChoice={}; staffDraft={}; eventOrderDraft={};
@@ -1166,6 +1218,7 @@ function applyRoleUI(){
   else if(role==='student') label = (isCoordinatorActive()?'外食訂購人':'同學')+'・座號 '+studentId;
   document.getElementById('who-label').textContent = label;
   document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-block' : 'none';
+  document.getElementById('student-gear-btn').style.display = role==='student' ? 'inline-block' : 'none';
   document.getElementById('bell-btn').style.display = role==='staff' ? 'inline-block' : 'none';
   document.getElementById('tutorial-replay-btn').style.display = role ? 'inline-block' : 'none';
   document.getElementById('tab-bar').style.display = role ? 'flex' : 'none';
@@ -2007,8 +2060,25 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
   const others=choiceList.filter(c=>!roster.includes(c.id));
   const notesList=choiceList.filter(c=>c.note);
   const unsetSeats=roster.filter(lab=>!choiceList.some(c=>c.id===lab));
-  const cancelSeats=roster.filter(lab=>{ const c=choiceList.find(x=>x.id===lab); return c && c.status==='cancel'; });
   const recurSeats=roster.filter(lab=>{ const c=choiceList.find(x=>x.id===lab); return c && c.status==='recur'; });
+  // 退餐欄位改成統計「已處理／未處理」：已處理是指伙委在🔔通知那邊已經打勾
+  // 的那筆退餐（代表已經跟廠商講過、可以正式從訂餐數量扣掉）；未處理則是
+  // 還沒打勾、還沒去跟廠商講的退餐（廠商那邊目前實際上還是會準備這些人的
+  // 餐點，所以還不能算進「已扣除」的訂餐人數裡）。baseOrdered 是「假設沒有
+  // 任何人退餐時」的訂餐基準（訂餐人數 + 退餐人數），effectiveOrdered 則是
+  // 用這個基準扣掉「已處理」退餐後，目前應該要跟廠商講的實際訂餐人數。
+  const cancelChoices=choiceList.filter(c=>c.status==='cancel');
+  const processedCancelChoices=cancelChoices.filter(c=>c.processed);
+  const unprocessedCancelChoices=cancelChoices.filter(c=>!c.processed);
+  const baseOrdered=counts.ordered+counts.cancel;
+  const effectiveOrdered=baseOrdered-processedCancelChoices.length;
+  const cancelBlockHtml = cancelChoices.length ? `
+    <div class="cancel-process-block">
+      <div class="other-label">退餐 ${cancelChoices.length} 人（已處理 ${processedCancelChoices.length}・未處理 ${unprocessedCancelChoices.length}）</div>
+      ${processedCancelChoices.length?`<div class="other-label">已處理（訂餐人數已扣除）：${processedCancelChoices.map(c=>escapeHtml(c.name||c.id)).join('、')}</div>`:''}
+      ${unprocessedCancelChoices.length?`<div class="other-label">未處理（訂餐人數尚未扣除，仍算在內）：${unprocessedCancelChoices.map(c=>escapeHtml(c.name||c.id)).join('、')}</div>`:''}
+      <div class="effective-order-note">目前實際訂餐人數：<b>${effectiveOrdered}</b> 人（原本 ${baseOrdered} 人 － 已處理退餐 ${processedCancelChoices.length} 人）</div>
+    </div>` : '';
   return `
   <div class="meal-card ${meal}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
@@ -2018,7 +2088,7 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
     <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 以後不定 → 未選）</div>
     <div class="number-grid">${grid}</div>
     ${unsetSeats.length?`<div class="pending-note" style="margin:0 0 8px;">尚未選擇（${unsetSeats.length}）：${unsetSeats.map(escapeHtml).join('、')}</div>`:''}
-    ${cancelSeats.length?`<div class="other-label">退餐：${cancelSeats.map(escapeHtml).join('、')}</div>`:''}
+    ${cancelBlockHtml}
     ${recurSeats.length?`<div class="other-label">以後不定（下次建立新的一週時會留白，需重新決定）：${recurSeats.map(escapeHtml).join('、')}</div>`:''}
     ${others.length?`<div class="other-label">其他（非座號名單，點擊姓名可切換狀態）</div><div class="chips">${others.map(c=>`<span class="name-chip" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${c.id}">${escapeHtml(c.name||c.id)}・${STATUS_LABEL[c.status]||'未選'}<button data-action="remove-choice" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
     <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
@@ -2602,6 +2672,16 @@ document.getElementById('gear-btn').addEventListener('click',()=>{
   fetchRecurringSkips();
 });
 
+document.getElementById('student-gear-btn').addEventListener('click',()=>{
+  document.getElementById('student-settings-bg').classList.add('show');
+});
+document.getElementById('student-settings-close').addEventListener('click',()=>{
+  document.getElementById('student-settings-bg').classList.remove('show');
+});
+document.getElementById('student-settings-bg').addEventListener('click',(ev)=>{
+  if(ev.target.id==='student-settings-bg') document.getElementById('student-settings-bg').classList.remove('show');
+});
+
 document.getElementById('bell-btn').addEventListener('click',()=>{
   renderNotifPanel();
   document.getElementById('notif-bg').classList.add('show');
@@ -2720,6 +2800,87 @@ function triggerEasterEgg(){
 document.getElementById('egg-overlay').addEventListener('click', ()=>{
   document.getElementById('egg-overlay').classList.remove('show');
 });
+
+// ============================================================
+// 🌧️ 彩蛋：液態玻璃下雨模式。故意做得很吃效能（整面畫面即時毛玻璃模糊 +
+// 每一幀都重新計算每一滴雨的位置），純粹視覺娛樂用，跟 Firestore 資料完全
+// 無關，只在本機、本次瀏覽有效（不寫入 localStorage，重新整理就恢復正常）。
+// 用 <canvas> 手刻一個很陽春的雨滴粒子系統：每滴雨有自己的 x/y/長度/速度/
+// 搖擺幅度，每一幀（requestAnimationFrame）各自往下移動、超出畫面底部就
+// 重新從頂端隨機位置掉下來，配合 CSS 幫主要卡片加上 backdrop-filter 毛玻璃
+// 模糊，讓畫面看起來像隔著一片下雨的玻璃。
+// ============================================================
+let rainGlassActive = false;
+let rainGlassCanvas = null, rainGlassCtx = null, rainGlassAnimId = null, rainGlassDrops = [];
+const RAIN_DROP_COUNT = 260; // 故意抓比較多滴，讓它更吃效能一點，符合「彩蛋」的惡趣味
+
+function makeRainDrop(w, h, resetToTop){
+  return {
+    x: Math.random()*w,
+    y: resetToTop ? -Math.random()*h : Math.random()*h,
+    len: 14 + Math.random()*26,
+    speed: 4 + Math.random()*9,
+    drift: (Math.random()-0.5)*1.4,
+    opacity: 0.15 + Math.random()*0.35,
+    width: 1 + Math.random()*1.6
+  };
+}
+function resizeRainCanvas(){
+  if(!rainGlassCanvas) return;
+  rainGlassCanvas.width = window.innerWidth;
+  rainGlassCanvas.height = window.innerHeight;
+}
+function rainGlassFrame(){
+  if(!rainGlassActive || !rainGlassCtx) return;
+  const w = rainGlassCanvas.width, h = rainGlassCanvas.height;
+  // 每一幀都整張畫布清乾淨再重畫，加上每滴雨的位置都是這一幀重新算出來的
+  // （不是套用固定的 CSS 動畫），這就是「即時計算」的部分。
+  rainGlassCtx.clearRect(0, 0, w, h);
+  rainGlassCtx.lineCap = 'round';
+  for(const d of rainGlassDrops){
+    d.y += d.speed;
+    d.x += d.drift;
+    if(d.y - d.len > h){ Object.assign(d, makeRainDrop(w, h, true)); continue; }
+    const grad = rainGlassCtx.createLinearGradient(d.x, d.y - d.len, d.x, d.y);
+    grad.addColorStop(0, 'rgba(180,210,255,0)');
+    grad.addColorStop(1, `rgba(200,225,255,${d.opacity})`);
+    rainGlassCtx.strokeStyle = grad;
+    rainGlassCtx.lineWidth = d.width;
+    rainGlassCtx.beginPath();
+    rainGlassCtx.moveTo(d.x, d.y - d.len);
+    rainGlassCtx.lineTo(d.x, d.y);
+    rainGlassCtx.stroke();
+  }
+  rainGlassAnimId = requestAnimationFrame(rainGlassFrame);
+}
+function startRainGlass(){
+  if(!rainGlassCanvas){
+    rainGlassCanvas = document.createElement('canvas');
+    rainGlassCanvas.id = 'rain-glass-canvas';
+    document.body.appendChild(rainGlassCanvas);
+    rainGlassCtx = rainGlassCanvas.getContext('2d');
+    window.addEventListener('resize', resizeRainCanvas);
+  }
+  resizeRainCanvas();
+  rainGlassDrops = Array.from({length: RAIN_DROP_COUNT}, ()=>makeRainDrop(rainGlassCanvas.width, rainGlassCanvas.height, false));
+  document.body.classList.add('rain-glass-mode');
+  rainGlassCanvas.style.display = 'block';
+  rainGlassActive = true;
+  rainGlassFrame();
+}
+function stopRainGlass(){
+  rainGlassActive = false;
+  if(rainGlassAnimId) cancelAnimationFrame(rainGlassAnimId);
+  rainGlassAnimId = null;
+  document.body.classList.remove('rain-glass-mode');
+  if(rainGlassCanvas) rainGlassCanvas.style.display = 'none';
+}
+function toggleRainGlass(){
+  if(rainGlassActive){ stopRainGlass(); showToast('已關閉液態玻璃下雨模式'); }
+  else{ startRainGlass(); showToast('液態玻璃下雨模式啟動，手機可能會發燙 🌧️'); }
+}
+document.getElementById('toggle-rain-glass-btn').addEventListener('click', toggleRainGlass);
+document.getElementById('toggle-rain-glass-btn-student').addEventListener('click', toggleRainGlass);
 
 // ============================================================
 // 一次性資料搬移：舊版「entries/{date}/lunch_choice、dinner_choice」子集合
