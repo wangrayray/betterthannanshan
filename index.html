@@ -77,12 +77,10 @@
   .notif-panel h3{margin:0 0 4px;font-family:'Zen Maru Gothic',sans-serif;font-size:16px;}
   .notif-panel .sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;}
   .notif-list{display:flex;flex-direction:column;gap:6px;}
-  .notif-row{display:flex;align-items:center;gap:8px;background:var(--danger-bg);border-radius:8px;padding:8px 10px;cursor:pointer;transition:opacity .12s;}
+  .notif-row{display:flex;align-items:center;gap:8px;background:var(--paper-soft);border-radius:8px;padding:8px 10px;cursor:pointer;transition:opacity .12s;}
   .notif-row:hover{opacity:.8;}
   .notif-row:active{transform:scale(.98);}
-  .notif-row.processed{opacity:.5;}
-  .notif-row.processed .notif-main{text-decoration:line-through;}
-  .notif-check{display:flex;align-items:center;flex-shrink:0;cursor:pointer;}
+  .notif-row.recur-type{background:var(--outside-bg);}
   .notif-week-group{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;}
   .notif-week-group:first-of-type{margin-top:0;border-top:none;padding-top:0;}
   .notif-week-group summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-soft);padding:4px 0;list-style:none;display:flex;align-items:center;gap:4px;}
@@ -100,12 +98,11 @@
   .recurring-skip-check{display:flex;align-items:center;gap:6px;cursor:pointer;}
   .recur-weekday-picker label{display:inline-flex !important;align-items:center;gap:2px;font-size:12px;margin-right:6px;cursor:pointer;}
   .notif-info{display:flex;flex-direction:column;gap:1px;}
-  .notif-main{font-size:13px;font-weight:700;color:var(--danger);}
-  .notif-row.recur-type{background:var(--outside-bg);}
-  .notif-row.recur-type .notif-main{color:var(--outside);}
+  .notif-main{font-size:13px;font-weight:700;color:var(--ink);}
   .notif-tag{display:inline-block;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-right:6px;vertical-align:middle;color:#fff;}
   .notif-tag.tag-cancel{background:var(--danger);}
   .notif-tag.tag-recur{background:var(--outside);}
+  .notif-tag.tag-processed{background:var(--mine);}
   .notif-time{font-size:11px;color:var(--ink-soft);}
   .notif-close{display:flex;justify-content:flex-end;margin-top:12px;}
   .notif-type-filter{display:flex;gap:8px;margin-bottom:14px;}
@@ -117,6 +114,8 @@
   .notif-meal-section:first-of-type{margin-top:0;}
   .notif-meal-title{font-size:12.5px;font-weight:700;color:var(--ink-soft);display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed var(--line);}
   .notif-meal-badge{font-size:10px;font-weight:700;color:var(--outside);background:var(--outside-bg);border-radius:10px;padding:0 6px;}
+  .meal-log-section{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;margin-top:6px;}
+  .meal-log-section .notif-list{max-height:420px;overflow-y:auto;}
 
   .tutorial-overlay{position:fixed;inset:0;z-index:80;pointer-events:auto;background:rgba(6,16,26,.82);display:none;}
   .tutorial-card{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(420px,92vw);max-height:88vh;overflow-y:auto;background:var(--paper);border-radius:14px;padding:20px;box-shadow:0 14px 44px rgba(0,0,0,.4);z-index:81;display:none;flex-direction:column;}
@@ -184,11 +183,31 @@
   .date-body{padding:0 14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   .date-card.collapsed .date-body,.date-card.collapsed .date-foot{display:none;}
   @media (max-width:640px){.date-body{grid-template-columns:1fr;}}
+  .date-body.single-meal{grid-template-columns:1fr;}
 
   .date-note{margin-top:2px;}
   .date-note .note-label{font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;}
   .date-note-input{width:100%;min-height:48px;font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--paper);color:var(--ink);resize:vertical;}
   .meal-card{border-radius:12px;padding:12px;}
+  .meal-view-toggle{display:flex;gap:10px;margin-bottom:22px;}
+  .meal-view-btn{flex:1;font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:16px;padding:16px;border-radius:14px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);cursor:pointer;box-shadow:var(--shadow);}
+  .meal-view-btn.active{background:var(--ink-solid);color:#fff;border-color:var(--ink-solid);}
+  /* 伙委一次只看一餐時（見 renderStaffDateCard 的 big=true），把主要互動
+     元件都放大，減少手滑誤觸：座號格、送出/捨棄按鈕、退餐完成勾選框。 */
+  .meal-card.lg{padding:18px;}
+  .meal-card.lg .meal-title{font-size:16px;}
+  .meal-card.lg .meal-summary,
+  .meal-card.lg .meal-stat-line,
+  .meal-card.lg .section-label{font-size:14px;}
+  .meal-card.lg .copy-last-btn{font-size:13.5px;padding:7px 14px;}
+  .meal-card.lg .number-grid{gap:8px;}
+  .meal-card.lg .number-cell{min-width:46px;height:42px;font-size:15px;border-radius:10px;}
+  .meal-card.lg .pending-bar{font-size:14.5px;padding:12px 14px;}
+  .meal-card.lg .pending-bar .btn{padding:10px 18px;font-size:14.5px;}
+  .meal-card.lg .cancel-check-row{font-size:14.5px;padding:10px 12px;}
+  .meal-card.lg .cancel-check-row input{width:20px;height:20px;}
+  .meal-card.lg .add-name-row input,
+  .meal-card.lg .add-name-row button{font-size:14px;padding:9px 12px;}
   .meal-card.lunch{background:var(--lunch-bg);}
   .meal-card.dinner{background:var(--dinner-bg);}
   .meal-title{font-family:'Zen Maru Gothic',sans-serif;font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:6px;margin-bottom:10px;}
@@ -222,14 +241,14 @@
   .number-cell.recur{background:var(--paper);color:var(--outside);border:1px dashed var(--outside);}
   .number-cell.pending{outline:2px dashed var(--outside);outline-offset:1px;}
   .pending-bar{margin:0 0 10px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--outside-bg);border:1px dashed var(--outside);border-radius:10px;font-size:12.5px;color:var(--outside);}
-  .confirmed-compare{font-size:11.5px;color:var(--ink-soft);background:var(--paper-soft);border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:0 0 8px;display:flex;flex-direction:column;gap:2px;}
-  .confirmed-compare b{color:var(--ink);}
-  .confirmed-compare.drift{background:var(--danger-bg);border-color:var(--danger);color:var(--danger);}
-  .confirmed-compare.drift b{color:var(--danger);}
-  .confirmed-compare.none{opacity:.75;}
-  .cancel-process-block{margin-bottom:8px;}
-  .effective-order-note{font-size:11.5px;color:var(--mine);background:var(--paid-bg);border-radius:8px;padding:6px 10px;margin-top:4px;}
-  .effective-order-note b{color:var(--mine);}
+  .meal-stat-line{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);background:var(--paper-soft);border-radius:8px;padding:7px 10px;margin:0 0 8px;}
+  .meal-stat-line b{color:var(--ink);font-size:13px;}
+  .cancel-log-block{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);}
+  .cancel-check-list{display:flex;flex-direction:column;gap:6px;}
+  .cancel-check-row{display:flex;align-items:center;gap:8px;font-size:12.5px;background:var(--paper);border-radius:8px;padding:6px 10px;cursor:pointer;}
+  .cancel-check-row input{width:16px;height:16px;cursor:pointer;accent-color:var(--mine);flex-shrink:0;}
+  .cancel-check-row.done{opacity:.6;}
+  .cancel-check-row.done span{text-decoration:line-through;}
   .pending-bar b{font-size:13px;}
   .pending-bar .btn{padding:5px 12px;font-size:12px;}
   .meal-summary{font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.7;}
@@ -407,9 +426,20 @@
 <div class="modal-bg" id="notif-bg">
   <div class="notif-panel">
     <h3>🔔 退餐／以後不定通知</h3>
-    <div class="sub">上面按鈕切換要看「退餐」還是「以後不定」，下面依午餐／晚餐分區；每一區內再依禮拜堆疊成一疊一疊，本週（含未來週）預設展開，較早的週次預設收合，可自行點開/收合。點通知可以跳到當天並標示座號；勾選代表已經處理過這筆（所有伙委共用同一份資料，任何人勾選後大家都看得到）。打開這個視窗會把目前看到的都標記為已讀（已讀狀態只存在你自己的裝置上）。</div>
+    <div class="sub">上面按鈕切換要看「退餐」還是「以後不定」，下面依午餐／晚餐分區；每一區內再依禮拜堆疊成一疊一疊，本週（含未來週）預設展開，較早的週次預設收合，可自行點開/收合。點通知可以跳到當天並標示座號。「已完成」勾選框已經移到訂餐頁面每個午餐／晚餐卡片最下面，同一份完整操作紀錄（含伙委的勾選行為）也會顯示在退餐紀錄頁面最下方的 log 區塊。打開這個視窗會把目前看到的都標記為已讀（已讀狀態只存在你自己的裝置上）。</div>
     <div id="notif-list-wrap"></div>
     <div class="notif-close"><button class="btn btn-ghost" id="notif-close-btn">關閉</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="meal-tag-bg">
+  <div class="panel">
+    <h3>你負責哪一餐？</h3>
+    <div class="sub">系統偵測到你的帳號還沒有設定負責的餐別。選好之後，訂餐畫面會直接導向對應的那一餐（之後隨時可以在頁面上自行切換，不影響其他伙委）。</div>
+    <button class="btn btn-primary" data-action="set-meal-tag" data-tag="lunch" type="button" style="width:100%;margin-bottom:8px;">🍱 午餐伙委</button>
+    <button class="btn btn-primary" data-action="set-meal-tag" data-tag="dinner" type="button" style="width:100%;margin-bottom:8px;">🌙 晚餐伙委</button>
+    <button class="btn btn-outside" data-action="set-meal-tag" data-tag="both" type="button" style="width:100%;">🍱🌙 兩者都負責</button>
+    <div class="actions"><button class="btn btn-ghost" id="meal-tag-skip">稍後再說</button></div>
   </div>
 </div>
 
@@ -419,6 +449,11 @@
     <div class="sub">此設定所有伙委共用，用於退餐名單的快速點選格。儲存後會自動同步全班座號名冊（students collection），同學才能用座號登入並寫入自己的資料。</div>
     <div class="row"><label>班級總座號數（例如 49）</label><input type="number" id="set-roster" min="1" max="99" value="49"></div>
     <div class="row check"><input type="checkbox" id="set-teacher" checked><label for="set-teacher">包含「師」座位</label></div>
+    <div class="row">
+      <label>我負責的餐別</label>
+      <div class="sub" style="margin:0 0 8px;" id="my-meal-tag-label">目前：尚未設定</div>
+      <button class="btn btn-ghost" id="change-meal-tag-btn" type="button">重新選擇</button>
+    </div>
     <div class="row"><label>新增其他伙委（輸入對方已註冊過的 Email）</label>
       <div style="display:flex;gap:6px;">
         <input type="text" id="set-staff-email" placeholder="name@example.com" style="flex:1;">
@@ -563,7 +598,7 @@ const WD = ['日','一','二','三','四','五','六'];
 const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐', recur:'以後不定'};
 const MEAL_LABEL = {lunch:'午餐', dinner:'晚餐'};
 const NOTIF_SEEN_KEY = 'cancelNotifLastSeen';
-let notifTypeFilter = 'cancel'; // 'cancel'（退餐）| 'recur'（以後不定）：通知視窗上方按鈕決定目前要看哪一種
+let notifTypeFilter = 'cancel'; // 'cancel'（退餐）| 'recur'（以後不定）：🔔通知面板上方按鈕決定目前要看哪一種
 // updatedAt 欄位現在改用 Firestore serverTimestamp()（安全性：防止有人直接用
 // SDK 偽造送出時間，見下方 firestore.rules 的 request.time 檢查），讀出來的
 // 型別會是 Firestore Timestamp 物件（有 .toMillis()），不是字串。舊資料（規則
@@ -621,15 +656,13 @@ function choiceArr(date, meal){
   return Object.keys(m).map(id=>Object.assign({id}, m[id]));
 }
 // ============================================================
-// 伙委端「退餐通知」——只列出退餐（不列訂餐/葷素），從 entries 裡的
-// lunch.choices/dinner.choices 直接算出來，不需要新的 Firestore 資料結構。
-// 「已讀」用瀏覽器 localStorage 記錄最後查看時間（每台裝置各自記錄），
-// 打開通知視窗時，會把當下看到的這幾筆都標記為已讀。
+// 伙委端「退餐通知」——只列出退餐／以後不定（不列訂餐/葷素選擇），從
+// entries 裡的 lunch.choices/dinner.choices 直接算出來。這個清單給 🔔
+// 通知彈窗用：按類型（退餐／以後不定）篩選、依午餐/晚餐分區、區內再依
+// 禮拜堆疊，純粹「顯示誰退餐、誰以後不定」，不含勾選框——「已完成」的
+// 勾選框在訂餐頁面每個 meal-card 最下面（見 renderStaffMealCard）。
 // ============================================================
 function computeMealNotifications(){
-  // 通知欄同時列出「退餐」跟「以後這天都不定」兩種狀態（不列正常訂餐/葷素
-  // 選擇），用 type 欄位區分，畫面上用不同顏色標籤呈現，方便伙委一次看到
-  // 所有需要留意的異動。
   const list=[];
   Object.keys(entries).forEach(date=>{
     ['lunch','dinner'].forEach(meal=>{
@@ -639,8 +672,7 @@ function computeMealNotifications(){
             key: date+'|'+meal+'|'+c.id,
             date, meal, type: c.status,
             label: c.seatNo || c.name || c.id,
-            updatedAtMs: tsMillis(c.updatedAt),
-            processed: !!c.processed
+            updatedAtMs: tsMillis(c.updatedAt)
           });
         }
       });
@@ -655,9 +687,6 @@ function getNotifLastSeen(){
 function setNotifLastSeen(ms){
   try{ localStorage.setItem(NOTIF_SEEN_KEY, String(ms)); }catch(e){}
 }
-// 「已處理」勾選現在直接寫回 Firestore（存在該筆退餐紀錄自己的 processed
-// 欄位裡），所有伙委共用同一份資料，任何人勾選後，其他伙委重新整理／即時
-// 監聽都會看到同樣的勾選狀態，不再只存在單一瀏覽器的 localStorage 裡。
 function updateBellBadge(){
   const badge=document.getElementById('bell-badge');
   if(!badge) return;
@@ -668,12 +697,12 @@ function updateBellBadge(){
   badge.classList.toggle('show', unread>0);
 }
 function renderNotifRow(n){
-  const processed = !!n.processed;
+  const isRecur = n.type==='recur';
+  const tagLabel = isRecur ? '以後不定' : '退餐';
   return `
-      <div class="notif-row ${processed?'processed':''} ${n.type==='recur'?'recur-type':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
-        <label class="notif-check" title="標記為已處理（所有伙委共用）"><input type="checkbox" data-action="toggle-notif-processed" data-key="${escapeHtml(n.key)}" ${processed?'checked':''}></label>
+      <div class="notif-row ${isRecur?'recur-type':''}" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
         <div class="notif-info">
-          <span class="notif-main">${escapeHtml(n.date)}（週${WD[parseDate(n.date).getDay()]}）・座號 ${escapeHtml(String(n.label))}</span>
+          <span class="notif-main"><span class="notif-tag ${isRecur?'tag-recur':'tag-cancel'}">${tagLabel}</span>${escapeHtml(n.date)}（週${WD[parseDate(n.date).getDay()]}）・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))}</span>
           <span class="notif-time">${n.updatedAtMs ? new Date(n.updatedAtMs).toLocaleString('zh-TW') : ''}</span>
         </div>
       </div>`;
@@ -687,10 +716,6 @@ function renderNotifPanel(){
     updateBellBadge();
     return;
   }
-
-  // 已讀分界點永遠用「全部」（退餐＋以後不定）裡最新一筆的時間來算，不受
-  // 目前篩選按鈕選了哪一種影響，這樣切換篩選鈕不會不小心把另一種的未讀
-  // 訊息也標記成已讀。
   setNotifLastSeen(list[0].updatedAtMs);
   updateBellBadge();
 
@@ -702,9 +727,6 @@ function renderNotifPanel(){
     <button type="button" class="notif-type-btn ${notifTypeFilter==='recur'?'active':''}" data-action="set-notif-type" data-type="recur">以後不定<span class="notif-type-count">${recurCount}</span></button>
   </div>`;
 
-  // 篩選出目前選定的類型後，先依「午餐／晚餐」分成兩區，每一區內部再依
-  // 「禮拜」堆疊成一疊一疊的區塊（本週含未來週預設展開，較早的週次預設
-  // 收合，都可以自行點開/收合），堆疊內依日期→座號排序。
   const filtered = list.filter(n=>n.type===notifTypeFilter);
   const byMeal = {lunch:[], dinner:[]};
   filtered.forEach(n=>{ (byMeal[n.meal]=byMeal[n.meal]||[]).push(n); });
@@ -771,6 +793,61 @@ function jumpToCancelEntry(date, meal, label){
     }
   }, 260);
 }
+// ============================================================
+// 退餐 log——放在「訂餐介面下面」（退餐紀錄頁籤，目前選定那一週的所有
+// 日期卡片下方）的一份完整紀錄，同時顯示「同學自己的退餐行為」跟「伙委
+// 的勾選（標記已完成）行為」，看得出誰在什麼時候做了什麼操作。跟上面
+// 🔔 通知彈窗是兩個獨立的東西：通知彈窗負責「有哪些退餐/以後不定」，
+// 這裡的 log 負責「完整的操作紀錄」。
+// ============================================================
+function computeMealLog(){
+  const list=[];
+  Object.keys(entries).forEach(date=>{
+    ['lunch','dinner'].forEach(meal=>{
+      choiceArr(date, meal).forEach(c=>{
+        if((c.status==='cancel' || c.status==='recur') && !c._virtual){
+          list.push({
+            date, meal, type: c.status,
+            label: c.seatNo || c.name || c.id,
+            action: c.status==='cancel' ? '退餐' : '以後不定',
+            actor: c.updatedBy || '（未知）',
+            atMs: tsMillis(c.updatedAt)
+          });
+          if(c.processed){
+            list.push({
+              date, meal, type:'processed',
+              label: c.seatNo || c.name || c.id,
+              action: '標記已完成',
+              actor: c.processedBy || '（未知）',
+              atMs: tsMillis(c.processedAt) || tsMillis(c.updatedAt)
+            });
+          }
+        }
+      });
+    });
+  });
+  list.sort((a,b)=> b.atMs - a.atMs);
+  return list;
+}
+function renderMealLogRow(n){
+  const tagClass = n.type==='cancel' ? 'tag-cancel' : (n.type==='recur' ? 'tag-recur' : 'tag-processed');
+  return `
+      <div class="notif-row" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
+        <div class="notif-info">
+          <span class="notif-main"><span class="notif-tag ${tagClass}">${n.action}</span>${escapeHtml(n.date)}（週${WD[parseDate(n.date).getDay()]}）・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))}</span>
+          <span class="notif-time">由 ${escapeHtml(n.actor)} · ${n.atMs ? new Date(n.atMs).toLocaleString('zh-TW') : ''}</span>
+        </div>
+      </div>`;
+}
+function renderMealLogSection(wk){
+  const list = computeMealLog().filter(n=>weekKey(n.date)===wk);
+  return `
+  <div class="meal-log-section">
+    <div class="section-label">📋 本週退餐 log（同學的退餐行為／伙委的勾選行為）</div>
+    ${list.length ? `<div class="notif-list">${list.map(renderMealLogRow).join('')}</div>` : `<div class="other-label">這一週目前沒有任何退餐相關紀錄</div>`}
+  </div>`;
+}
+
 let entries = {};      // date -> {date,lunch:{choices:{}},dinner:{choices:{}},lastEditBy,lastEditAt,note}
 let events = {};        // id -> {id,title,createdAt,createdBy,lastEditBy,lastEditAt}
 let eventMenu = {};     // eventId -> [{id,name,price}]
@@ -793,6 +870,8 @@ let eventOrderDraft = {}; // "eventId|label" -> {items:{itemId:qty,...}}  外食
 let collapsedDates = new Set();
 let defaultedCollapseDates = new Set();
 let selectedWeekKey = null;   // 目前選擇檢視的週次（週一日期字串），null 代表尚未決定，render 時會自動選本週
+let staffMealTag = null;      // 'lunch'｜'dinner'｜'both'｜null：伙委帳號負責的餐別，存在 staff/{email} 文件的 mealTag 欄位
+let mealViewFilter = 'lunch'; // 'lunch'｜'dinner'：伙委目前在退餐紀錄頁面檢視的是哪一餐（畫面一次只顯示一餐，按鈕可以放大）
 let weekPickerOpen = false;   // 選週下拉面板是否展開
 let archiveSubmenuOpen = false; // 選週面板裡「封存／歷史週次」子選單是否展開
 // 伙委端「批次送出」本機暫存：key 是 date+'|'+meal+'|'+label，value 是
@@ -960,6 +1039,10 @@ async function resolveRoleAndBoot(user){
 
   if(staffSnap && staffSnap.exists()){
     role='staff'; staffName = staffSnap.data().name || myEmail; studentId='';
+    staffMealTag = staffSnap.data().mealTag || null;
+    // 沒有標籤就先假設看午餐（等下面彈窗詢問後會依選擇覆蓋）；有標籤的話，
+    // 「兩者都負責」預設先看午餐，午餐/晚餐伙委則直接導向對應的那一餐。
+    mealViewFilter = staffMealTag==='dinner' ? 'dinner' : 'lunch';
   } else if(myEmail.endsWith('@'+CLASS_DOMAIN)){
     role='student'; studentId = myEmail.slice(0, myEmail.length-('@'+CLASS_DOMAIN).length); staffName='';
   } else {
@@ -970,6 +1053,12 @@ async function resolveRoleAndBoot(user){
   applyRoleUI();
   document.getElementById('role-bg').classList.remove('show');
   subscribeAll();
+
+  // 偵測到伙委帳號還沒有設定負責的餐別（午餐/晚餐/都負責），跳出詢問視窗，
+  // 選好之後會直接把畫面導向對應的訂餐介面（見 meal-tag-bg 的點擊處理）。
+  if(role==='staff' && !staffMealTag){
+    setTimeout(()=>{ document.getElementById('meal-tag-bg').classList.add('show'); }, 500);
+  }
 
   // 教學只給「初次註冊」的人看，不是每次登入都跳——所以判斷的是 registerFlow()
   // 留下來的「待播放」旗標，而不是「這個角色有沒有看過」。教學畫面現在是完全獨立
@@ -1149,6 +1238,7 @@ function teardownState(){
   collapsedDates=new Set();
   defaultedCollapseDates=new Set();
   selectedWeekKey=null; weekPickerOpen=false; archiveSubmenuOpen=false;
+  staffMealTag=null; mealViewFilter='lunch';
 }
 
 onAuthStateChanged(auth, async (user)=>{
@@ -1469,23 +1559,6 @@ async function submitMealChanges(date, meal){
     applied.push(k);
   });
   if(applied.length){
-    // 「確認人數」基準：伙委按下這一餐的送出按鈕，就代表他看過、確認過
-    // 這一餐目前的訂餐人數，記錄成 confirmedCounts 快照（連同確認時間、
-    // 確認人）。之後如果有人（同學自己或其他伙委）又更改選擇，畫面上的
-    // 「上次提交 vs 現有」比較列就會跟這個快照對不上，提醒伙委需要重新
-    // 確認，避免已經跟廠商回報的訂購人數，事後被悄悄改掉卻沒人發現。
-    const map = Object.assign({}, choiceMap(date, meal));
-    pendingKeys.forEach(k=>{
-      const p=staffDraft[k];
-      if(conflicts.includes(p)) return;
-      if(p.next===null) delete map[p.label];
-      else map[p.label] = Object.assign({}, map[p.label], {id:p.label, status:p.next});
-    });
-    const arr = Object.keys(map).map(id=>Object.assign({id}, map[id]));
-    const counts = mealCounts(arr);
-    fieldUpdates[meal+'.confirmedCounts'] = {meat:counts.meat, veg:counts.veg, cancel:counts.cancel, recur:counts.recur, ordered:counts.ordered};
-    fieldUpdates[meal+'.confirmedAt'] = serverTimestamp();
-    fieldUpdates[meal+'.confirmedBy'] = identity();
     fieldUpdates.lastEditBy=identity();
     fieldUpdates.lastEditAt=new Date().toISOString();
     await updateDoc(doc(db,'entries',date), fieldUpdates);
@@ -1902,6 +1975,13 @@ function renderMealTab(){
       <button class="btn btn-ghost" id="add-date-btn">＋新增單日</button>
       <button class="btn btn-primary" id="add-week-btn">＋新增整週（一～五，自動延續上週）</button>
     </div>`;
+    // 伙委畫面一次只顯示一餐，按鈕可以放大、比較不會誤觸；這裡切換要看
+    // 的是哪一餐，預設依登入時的餐別標籤決定，之後隨時可以自行切換。
+    addBarHtml += `
+    <div class="meal-view-toggle">
+      <button type="button" class="meal-view-btn ${mealViewFilter==='lunch'?'active':''}" data-action="set-meal-view" data-view="lunch">🍱 午餐訂餐畫面</button>
+      <button type="button" class="meal-view-btn ${mealViewFilter==='dinner'?'active':''}" data-action="set-meal-view" data-view="dinner">🌙 晚餐訂餐畫面</button>
+    </div>`;
   }
   const noteHtml = pendingRosterNote();
 
@@ -1955,6 +2035,7 @@ function renderMealTab(){
   html += '<div class="week-group" data-week="'+wk+'">';
   ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
   html += '</div>';
+  if(role==='staff'){ html += renderMealLogSection(wk); }
   content.innerHTML = html;
 }
 
@@ -1962,15 +2043,21 @@ function renderStaffDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
   const lC=mergedStaffChoiceArr(date,'lunch'), dC=mergedStaffChoiceArr(date,'dinner');
   const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
+  // 一次只顯示目前檢視的那一餐（見上方午餐/晚餐訂餐畫面切換鈕），卡片全寬
+  // 顯示，配合 renderStaffMealCard 的 big=true 放大按鈕與座號格，比較不會
+  // 誤觸；上面的兩個 chip 仍然同時顯示兩餐概況，方便瞄一眼另一餐的狀態。
+  const showLunch = mealViewFilter!=='dinner';
+  const mealCardHtml = showLunch
+    ? renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lC,true)
+    : renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC,true);
   return `
   <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
       <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
       <div class="date-head-right">${headRight}</div>
     </div>
-    <div class="date-body">
-      ${renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lC)}
-      ${renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC)}
+    <div class="date-body single-meal">
+      ${mealCardHtml}
       <div class="date-note" style="grid-column:1 / -1;">
         <label class="note-label">備註（伙委內部使用）</label>
         <textarea class="date-note-input" data-action="date-note" data-date="${date}" placeholder="輸入這一天的備註，例如：47 號請假、43 號晚餐加訂...">${escapeHtml(e.note||'')}</textarea>
@@ -1983,22 +2070,9 @@ function renderStaffDateCard(date){
   </div>`;
 }
 
-function renderStaffMealCard(date, meal, label, m, choiceList){
+function renderStaffMealCard(date, meal, label, m, choiceList, big){
   const roster=rosterLabels();
   const counts=mealCounts(choiceList);
-  // 「上次提交 vs 現有」比較列：伙委上次按這一餐的「送出」時，會把當下的
-  // 人數存成 m.confirmedCounts 快照（連同確認時間、確認人）。這裡永遠顯示
-  // 兩邊的數字方便對照；如果之後有人（同學自己或其他伙委）又更改選擇，
-  // 導致兩邊數字對不上，就額外用醒目樣式標示提醒重新確認。
-  const confirmed = m.confirmedCounts;
-  const drifted = confirmed && (confirmed.ordered!==counts.ordered || confirmed.meat!==counts.meat || confirmed.veg!==counts.veg || confirmed.cancel!==counts.cancel);
-  const confirmedAtMs = confirmed ? tsMillis(m.confirmedAt) : 0;
-  const compareHtml = confirmed
-    ? `<div class="confirmed-compare ${drifted?'drift':''}">
-        <span>上次提交：<b>${confirmed.ordered}</b> 人（葷${confirmed.meat}／素${confirmed.veg}／退${confirmed.cancel}）${confirmedAtMs?'・'+new Date(confirmedAtMs).toLocaleString('zh-TW'):''}</span>
-        <span>現有：<b>${counts.ordered}</b> 人（葷${counts.meat}／素${counts.veg}／退${counts.cancel}）${drifted?'　⚠️ 跟上次提交不同，請重新確認':''}</span>
-      </div>`
-    : `<div class="confirmed-compare none"><span>尚未送出過確認</span><span>現有：<b>${counts.ordered}</b> 人（葷${counts.meat}／素${counts.veg}／退${counts.cancel}）</span></div>`;
   const pending = pendingCountForMeal(date, meal);
   const pendingBarHtml = pending ? `
     <div class="pending-bar">
@@ -2017,38 +2091,46 @@ function renderStaffMealCard(date, meal, label, m, choiceList){
   const notesList=choiceList.filter(c=>c.note);
   const unsetSeats=roster.filter(lab=>!choiceList.some(c=>c.id===lab));
   const recurSeats=roster.filter(lab=>{ const c=choiceList.find(x=>x.id===lab); return c && c.status==='recur'; });
-  // 退餐欄位改成統計「已處理／未處理」：已處理是指伙委在🔔通知那邊已經打勾
-  // 的那筆退餐（代表已經跟廠商講過、可以正式從訂餐數量扣掉）；未處理則是
-  // 還沒打勾、還沒去跟廠商講的退餐（廠商那邊目前實際上還是會準備這些人的
-  // 餐點，所以還不能算進「已扣除」的訂餐人數裡）。baseOrdered 是「假設沒有
-  // 任何人退餐時」的訂餐基準（訂餐人數 + 退餐人數），effectiveOrdered 則是
-  // 用這個基準扣掉「已處理」退餐後，目前應該要跟廠商講的實際訂餐人數。
+  // 統計重製：只留三個數字——原本訂餐人數（假設沒有人退餐時的基準）、
+  // 退訂了幾個人、其中已經完成處理（🔔通知那邊/下面勾選框打勾）的有幾個。
   const cancelChoices=choiceList.filter(c=>c.status==='cancel');
   const processedCancelChoices=cancelChoices.filter(c=>c.processed);
-  const unprocessedCancelChoices=cancelChoices.filter(c=>!c.processed);
   const baseOrdered=counts.ordered+counts.cancel;
-  const effectiveOrdered=baseOrdered-processedCancelChoices.length;
-  const cancelBlockHtml = cancelChoices.length ? `
-    <div class="cancel-process-block">
-      <div class="other-label">退餐 ${cancelChoices.length} 人（已處理 ${processedCancelChoices.length}・未處理 ${unprocessedCancelChoices.length}）</div>
-      ${processedCancelChoices.length?`<div class="other-label">已處理（訂餐人數已扣除）：${processedCancelChoices.map(c=>escapeHtml(c.name||c.id)).join('、')}</div>`:''}
-      ${unprocessedCancelChoices.length?`<div class="other-label">未處理（訂餐人數尚未扣除，仍算在內）：${unprocessedCancelChoices.map(c=>escapeHtml(c.name||c.id)).join('、')}</div>`:''}
-      <div class="effective-order-note">目前實際訂餐人數：<b>${effectiveOrdered}</b> 人（原本 ${baseOrdered} 人 － 已處理退餐 ${processedCancelChoices.length} 人）</div>
+  const statLineHtml = `
+    <div class="meal-stat-line">
+      <span>原本訂餐 <b>${baseOrdered}</b> 人</span>
+      <span>退訂 <b>${counts.cancel}</b> 人</span>
+      <span>已完成 <b>${processedCancelChoices.length}</b> 個</span>
+    </div>`;
+  // 退餐處理進度：勾選代表「已經跟廠商講過／已經處理完這筆退餐」，所有
+  // 伙委共用同一份資料。特意放在卡片最下面（訂餐頁面下方），跟上面選擇
+  // 狀態的座號格分開，並且完全綁在這一餐（午餐或晚餐各自的 choiceList）
+  // 底下，兩餐的核取方塊互不影響、不會互相蓋掉對方的資料。
+  const cancelCheckHtml = cancelChoices.length ? `
+    <div class="cancel-log-block">
+      <div class="section-label">退餐處理進度（勾選代表已完成，所有伙委共用）</div>
+      <div class="cancel-check-list">
+        ${cancelChoices.map(c=>`
+        <label class="cancel-check-row ${c.processed?'done':''}">
+          <input type="checkbox" data-action="toggle-cancel-processed" data-date="${date}" data-meal="${meal}" data-id="${c.id}" ${c.processed?'checked':''}>
+          <span>${escapeHtml(c.name||c.id)}</span>
+        </label>`).join('')}
+      </div>
     </div>` : '';
   return `
-  <div class="meal-card ${meal}">
+  <div class="meal-card ${meal}${big?' lg':''}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
-    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・退餐 <b>${counts.cancel}</b> 人${counts.recur?`・不定 <b>${counts.recur}</b> 人`:''}・尚未選擇 <b>${counts.unset}</b> 人</div>
-    ${compareHtml}
+    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・尚未選擇 <b>${counts.unset}</b> 人</div>
+    ${statLineHtml}
     ${pendingBarHtml}
     <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 以後不定 → 未選）</div>
     <div class="number-grid">${grid}</div>
     ${unsetSeats.length?`<div class="pending-note" style="margin:0 0 8px;">尚未選擇（${unsetSeats.length}）：${unsetSeats.map(escapeHtml).join('、')}</div>`:''}
-    ${cancelBlockHtml}
     ${recurSeats.length?`<div class="other-label">以後不定（下次建立新的一週時會留白，需重新決定）：${recurSeats.map(escapeHtml).join('、')}</div>`:''}
     ${others.length?`<div class="other-label">其他（非座號名單，點擊姓名可切換狀態）</div><div class="chips">${others.map(c=>`<span class="name-chip" data-action="cycle-status" data-date="${date}" data-meal="${meal}" data-label="${c.id}">${escapeHtml(c.name||c.id)}・${STATUS_LABEL[c.status]||'未選'}<button data-action="remove-choice" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
     <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
     ${notesList.length?`<div class="other-label">備註</div><div class="chips">${notesList.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}：${escapeHtml(c.note)}<button data-action="clear-note" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
+    ${cancelCheckHtml}
   </div>`;
 }
 
@@ -2277,7 +2359,10 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   const action=el.dataset.action, date=el.dataset.date, meal=el.dataset.meal, eventId=el.dataset.event;
   try{
 
-  if(action==='toggle'){
+  if(action==='jump-notif'){
+    jumpToCancelEntry(date, meal, el.dataset.label);
+  }
+  else if(action==='toggle'){
     if(ev.target.closest('.date-delete')||ev.target.closest('.copy-last-btn')) return;
     if(collapsedDates.has(date)){ collapsedDates.delete(date); } else collapsedDates.add(date);
     render();
@@ -2298,6 +2383,10 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     selectedWeekKey = el.dataset.week;
     weekPickerOpen = false;
     archiveSubmenuOpen = false;
+    render();
+  }
+  else if(action==='set-meal-view'){
+    mealViewFilter = el.dataset.view;
     render();
   }
   else if(action==='toggle-archive-submenu'){
@@ -2509,6 +2598,22 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
       paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString(), updatedAt:serverTimestamp()
     });
   }
+  else if(ev.target.dataset.action==='toggle-cancel-processed'){
+    // 這一餐（午餐/晚餐各自獨立）某個座號的退餐「已完成」勾選：連同是誰、
+    // 什麼時候勾的一起記錄下來，供上面 🔔 退餐 log 顯示「誰進行了什麼操作」。
+    const date=ev.target.dataset.date, meal=ev.target.dataset.meal, id=ev.target.dataset.id;
+    const checked=ev.target.checked;
+    const base=meal+'.choices.'+id;
+    await updateDoc(doc(db,'entries',date), checked ? {
+      [base+'.processed']: true,
+      [base+'.processedBy']: identity(),
+      [base+'.processedAt']: serverTimestamp()
+    } : {
+      [base+'.processed']: false,
+      [base+'.processedBy']: deleteField(),
+      [base+'.processedAt']: deleteField()
+    });
+  }
   }catch(err){
     console.error(err);
     showToast('操作失敗：'+(err.message||err.code||'未知錯誤，請稍後再試'));
@@ -2614,9 +2719,31 @@ document.getElementById('set-recurring-skip-btn').addEventListener('click', asyn
   document.querySelectorAll('#recur-weekday-picker-lunch input, #recur-weekday-picker-dinner input').forEach(cb=>cb.checked=false);
   await fetchRecurringSkips();
 });
+document.getElementById('meal-tag-bg').addEventListener('click', async (ev)=>{
+  const btn = ev.target.closest('[data-action="set-meal-tag"]');
+  if(!btn) return;
+  const tag = btn.dataset.tag;
+  try{
+    await setDoc(doc(db,'staff',myEmail), {mealTag:tag}, {merge:true});
+    staffMealTag = tag;
+    mealViewFilter = tag==='dinner' ? 'dinner' : 'lunch';
+    document.getElementById('meal-tag-bg').classList.remove('show');
+    const tagLabel = tag==='lunch' ? '午餐伙委' : (tag==='dinner' ? '晚餐伙委' : '午晚餐都負責');
+    showToast('已設定為'+tagLabel+'，已為你導向對應的訂餐畫面');
+    render();
+  }catch(err){
+    console.error(err);
+    showToast('設定失敗：'+(err.message||err.code||'未知錯誤'));
+  }
+});
+document.getElementById('meal-tag-skip').addEventListener('click', ()=>{
+  document.getElementById('meal-tag-bg').classList.remove('show');
+});
 document.getElementById('gear-btn').addEventListener('click',()=>{
   document.getElementById('set-roster').value=settings.rosterSize;
   document.getElementById('set-teacher').checked=settings.includeTeacher;
+  const tagLabelMap = {lunch:'🍱 午餐伙委', dinner:'🌙 晚餐伙委', both:'🍱🌙 午晚餐都負責'};
+  document.getElementById('my-meal-tag-label').textContent = '目前：'+(tagLabelMap[staffMealTag]||'尚未設定');
   renderCoordinatorList();
   renderRecurringSkipList();
   document.getElementById('settings-bg').classList.add('show');
@@ -2627,36 +2754,20 @@ document.getElementById('gear-btn').addEventListener('click',()=>{
   fetchEventCoordinators();
   fetchRecurringSkips();
 });
+document.getElementById('change-meal-tag-btn').addEventListener('click',()=>{
+  document.getElementById('settings-bg').classList.remove('show');
+  document.getElementById('meal-tag-bg').classList.add('show');
+});
 
 document.getElementById('bell-btn').addEventListener('click',()=>{
   renderNotifPanel();
   document.getElementById('notif-bg').classList.add('show');
 });
-document.getElementById('notif-list-wrap').addEventListener('click', async (ev)=>{
+document.getElementById('notif-list-wrap').addEventListener('click', (ev)=>{
   const typeBtn = ev.target.closest('[data-action="set-notif-type"]');
   if(typeBtn){
     notifTypeFilter = typeBtn.dataset.type;
     renderNotifPanel();
-    return;
-  }
-  const checkEl = ev.target.closest('[data-action="toggle-notif-processed"]');
-  if(checkEl){
-    ev.stopPropagation();
-    // 已處理狀態現在直接寫回這筆退餐紀錄自己的 processed 欄位（entries 文件），
-    // 所有伙委共用同一份，不再只存在單一瀏覽器的 localStorage。
-    const parts = checkEl.dataset.key.split('|');
-    const date = parts[0], meal = parts[1], id = parts.slice(2).join('|');
-    const checked = checkEl.checked;
-    const row = checkEl.closest('.notif-row');
-    if(row) row.classList.toggle('processed', checked);
-    try{
-      await updateDoc(doc(db,'entries',date), { [meal+'.choices.'+id+'.processed']: checked });
-    }catch(err){
-      console.error(err);
-      showToast('標記失敗：'+(err.message||err.code||'未知錯誤'));
-      checkEl.checked = !checked;
-      if(row) row.classList.toggle('processed', !checked);
-    }
     return;
   }
   const el=ev.target.closest('[data-action="jump-notif"]'); if(!el) return;
