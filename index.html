@@ -248,6 +248,14 @@
   .cancel-check-row input{width:16px;height:16px;cursor:pointer;accent-color:var(--mine);flex-shrink:0;}
   .cancel-check-row.done{opacity:.6;}
   .cancel-check-row.done span{text-decoration:line-through;}
+  .cancel-check-tag{display:inline-block;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-left:6px;color:#fff;background:var(--danger);text-decoration:none !important;}
+  .cancel-check-tag.recur{background:var(--outside);}
+  .event-archive-group{margin-top:18px;border-top:1px dashed var(--line);padding-top:10px;}
+  .event-archive-group summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--ink-soft);padding:6px 2px;list-style:none;display:flex;align-items:center;gap:6px;}
+  .event-archive-group summary::-webkit-details-marker{display:none;}
+  .event-archive-group summary::before{content:'▸';}
+  .event-archive-group[open] > summary::before{content:'▾';}
+  .event-archive-group .event-archive-list{margin-top:8px;opacity:.85;}
   .pending-bar b{font-size:13px;}
   .pending-bar .btn{padding:5px 12px;font-size:12px;}
   .meal-summary{font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.7;}
@@ -414,11 +422,11 @@
 
 <div class="modal-bg" id="gmap-modal-bg">
   <div class="gmap-modal-box">
-    <div class="gmap-modal-head"><h3>📍 選擇餐廳</h3><button type="button" id="gmap-modal-close">✕</button></div>
+    <div class="gmap-modal-head"><h3>選擇餐廳</h3><button type="button" id="gmap-modal-close">✕</button></div>
     <input type="text" id="gmap-search-input" placeholder="搜尋店名或地址…">
     <div id="gmap-canvas"></div>
     <div id="gmap-selected-info"></div>
-    <button type="button" class="btn btn-primary" id="gmap-confirm-btn" disabled>✅ 推薦這個地點</button>
+    <button type="button" class="btn btn-primary" id="gmap-confirm-btn" disabled>推薦這個地點</button>
   </div>
 </div>
 
@@ -435,9 +443,9 @@
   <div class="panel">
     <h3>你負責哪一餐？</h3>
     <div class="sub">系統偵測到你的帳號還沒有設定負責的餐別。選好之後，訂餐畫面會直接導向對應的那一餐（之後隨時可以在頁面上自行切換，不影響其他伙委）。</div>
-    <button class="btn btn-primary" data-action="set-meal-tag" data-tag="lunch" type="button" style="width:100%;margin-bottom:8px;">🍱 午餐伙委</button>
-    <button class="btn btn-primary" data-action="set-meal-tag" data-tag="dinner" type="button" style="width:100%;margin-bottom:8px;">🌙 晚餐伙委</button>
-    <button class="btn btn-outside" data-action="set-meal-tag" data-tag="both" type="button" style="width:100%;">🍱🌙 兩者都負責</button>
+    <button class="btn btn-primary" data-action="set-meal-tag" data-tag="lunch" type="button" style="width:100%;margin-bottom:8px;">午餐伙委</button>
+    <button class="btn btn-primary" data-action="set-meal-tag" data-tag="dinner" type="button" style="width:100%;margin-bottom:8px;">晚餐伙委</button>
+    <button class="btn btn-outside" data-action="set-meal-tag" data-tag="both" type="button" style="width:100%;">兩者都負責</button>
     <div class="actions"><button class="btn btn-ghost" id="meal-tag-skip">稍後再說</button></div>
   </div>
 </div>
@@ -763,7 +771,7 @@ function renderNotifPanel(){
     </div>`;
   };
 
-  wrap.innerHTML = filterBarHtml + mealSectionHtml('lunch','🍱 午餐') + mealSectionHtml('dinner','🌙 晚餐');
+  wrap.innerHTML = filterBarHtml + mealSectionHtml('lunch','午餐') + mealSectionHtml('dinner','晚餐');
 }
 function jumpToCancelEntry(date, meal, label){
   document.getElementById('notif-bg').classList.remove('show');
@@ -1127,8 +1135,8 @@ const TUTORIAL_STEPS = [
     </div>` },
   { title:'推薦餐廳', desc:'覺得有想吃的餐廳嗎？點這裡打開地圖搜尋店名、或直接點地圖上的店家來推薦；地圖上找不到的話，下面也可以直接輸入店名推薦。每人最多可以推薦兩家，自己推薦的可以隨時按「移除我的推薦」取消；伙委／外食訂購人則可以移除任何人的推薦。',
     stageHtml:`<div class="rec-section" style="border-top:none;padding-top:0;max-width:300px;">
-      <div class="section-label">🍽️ 餐廳推薦（示範）</div>
-      <div class="rec-search-row"><button type="button" class="btn btn-outside tutorial-target">📍 開啟地圖選餐廳</button></div>
+      <div class="section-label">餐廳推薦（示範）</div>
+      <div class="rec-search-row"><button type="button" class="btn btn-outside tutorial-target">開啟地圖選餐廳</button></div>
       <div class="rec-list"><div class="rec-row"><div class="rec-info"><span class="rec-name">阿明雞排<span class="rec-count">×3</span></span></div></div></div>
     </div>` },
   { title:'登出／切換帳號', desc:'這裡可以登出，或是切換成別的座號登入（例如借同學的裝置時）。',
@@ -1747,6 +1755,14 @@ async function addEventCustomName(eventId, name){
   const id='other__'+uid();
   await setDoc(doc(db,'events',eventId,'orders',id), {studentId:name, name, items:{}, eventId, updatedBy:identity(), updatedAt:serverTimestamp()});
 }
+async function archiveEvent(id){
+  await updateDoc(doc(db,'events',id), {archived:true, lastEditBy:identity(), lastEditAt:new Date().toISOString()});
+  showToast('已封存「'+(events[id]?events[id].title:'')+'」，可以在下方「已封存的活動」找到並取消封存');
+}
+async function unarchiveEvent(id){
+  await updateDoc(doc(db,'events',id), {archived:false, lastEditBy:identity(), lastEditAt:new Date().toISOString()});
+  showToast('已取消封存');
+}
 async function deleteEvent(id){
   const ok=await showConfirm('「'+events[id].title+'」要刪除嗎？此動作無法復原。');
   if(!ok) return;
@@ -1973,8 +1989,8 @@ function renderMealTab(){
     // 的是哪一餐，預設依登入時的餐別標籤決定，之後隨時可以自行切換。
     addBarHtml += `
     <div class="meal-view-toggle">
-      <button type="button" class="meal-view-btn ${mealViewFilter==='lunch'?'active':''}" data-action="set-meal-view" data-view="lunch">🍱 午餐訂餐畫面</button>
-      <button type="button" class="meal-view-btn ${mealViewFilter==='dinner'?'active':''}" data-action="set-meal-view" data-view="dinner">🌙 晚餐訂餐畫面</button>
+      <button type="button" class="meal-view-btn ${mealViewFilter==='lunch'?'active':''}" data-action="set-meal-view" data-view="lunch">午餐訂餐畫面</button>
+      <button type="button" class="meal-view-btn ${mealViewFilter==='dinner'?'active':''}" data-action="set-meal-view" data-view="dinner">晚餐訂餐畫面</button>
     </div>`;
   }
   const noteHtml = pendingRosterNote();
@@ -2095,25 +2111,27 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
       <span>退訂 <b>${counts.cancel}</b> 人</span>
       <span>已完成 <b>${processedCancelChoices.length}</b> 個</span>
     </div>`;
-  // 退餐處理進度：勾選代表「已經跟廠商講過／已經處理完這筆退餐」，所有
-  // 伙委共用同一份資料。特意放在卡片最下面（訂餐頁面下方），跟上面選擇
-  // 狀態的座號格分開，並且完全綁在這一餐（午餐或晚餐各自的 choiceList）
-  // 底下，兩餐的核取方塊互不影響、不會互相蓋掉對方的資料。
-  const cancelCheckHtml = cancelChoices.length ? `
+  // 處理進度勾選：退餐、以後不定 都可以勾選「已完成」（代表已經跟廠商講過
+  // / 已經跟對方確認過了），所有伙委共用同一份資料。特意放在卡片最下面
+  // （訂餐頁面下方），跟上面選擇狀態的座號格分開，並且完全綁在這一餐
+  // （午餐或晚餐各自的 choiceList）底下，兩餐的核取方塊互不影響、不會
+  // 互相蓋掉對方的資料。
+  const actionableChoices=choiceList.filter(c=>c.status==='cancel' || c.status==='recur');
+  const cancelCheckHtml = actionableChoices.length ? `
     <div class="cancel-log-block">
-      <div class="section-label">退餐處理進度（勾選代表已完成，所有伙委共用）</div>
+      <div class="section-label">退餐／以後不定 處理進度（勾選代表已完成，所有伙委共用）</div>
       <div class="cancel-check-list">
-        ${cancelChoices.map(c=>`
+        ${actionableChoices.map(c=>`
         <label class="cancel-check-row ${c.processed?'done':''}">
           <input type="checkbox" data-action="toggle-cancel-processed" data-date="${date}" data-meal="${meal}" data-id="${c.id}" ${c.processed?'checked':''}>
-          <span>${escapeHtml(c.name||c.id)}</span>
+          <span>${escapeHtml(c.name||c.id)}<span class="cancel-check-tag ${c.status==='recur'?'recur':''}">${c.status==='cancel'?'退餐':'以後不定'}</span></span>
         </label>`).join('')}
       </div>
     </div>` : '';
   const dayLogList = computeDayMealLog(date, meal);
   const dayLogHtml = `
     <div class="cancel-log-block">
-      <div class="section-label">📋 ${label} log（同學的退餐行為／伙委的勾選行為）</div>
+      <div class="section-label">${label} log（同學的退餐行為／伙委的勾選行為）</div>
       ${dayLogList.length ? `<div class="notif-list">${dayLogList.map(renderDayLogRow).join('')}</div>` : `<div class="other-label">目前沒有任何紀錄</div>`}
     </div>`;
   return `
@@ -2182,7 +2200,9 @@ function renderStudentMealCard(date, meal, label, m, choiceList){
 
 function renderEventTab(){
   const content=document.getElementById('content');
-  const list=Object.values(events).sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+  const allEvents=Object.values(events).sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+  const list=allEvents.filter(ev=>!ev.archived);
+  const archivedList=allEvents.filter(ev=>ev.archived);
   const manage = canManageEvents();
 
   let addHtml='';
@@ -2193,17 +2213,30 @@ function renderEventTab(){
 
   const totalAll = list.reduce((s,ev)=>s+eventTotal(ev),0);
   const overviewHtml = `<div class="overview">
-    <div class="stat"><span class="num">NT$ ${totalAll}</span><span class="lab">全部活動總金額</span></div>
-    <div class="stat"><span class="num">${list.length}</span><span class="lab">已建立活動數</span></div>
+    <div class="stat"><span class="num">NT$ ${totalAll}</span><span class="lab">進行中活動總金額</span></div>
+    <div class="stat"><span class="num">${list.length}</span><span class="lab">進行中活動數</span></div>
   </div>`;
 
-  if(list.length===0){
+  const archiveHtml = archivedList.length ? `
+  <details class="event-archive-group">
+    <summary>已封存的活動（${archivedList.length}）</summary>
+    <div class="event-archive-list">
+      ${archivedList.map(ev=> manage ? renderStaffEventCard(ev) : renderStudentEventCard(ev)).join('')}
+    </div>
+  </details>` : '';
+
+  if(list.length===0 && archivedList.length===0){
     content.innerHTML = addHtml + noteHtml + overviewHtml + `<div class="empty-state">${manage?'還沒有外食訂購活動，建立一個開始收單吧':'目前沒有進行中的外食訂購活動'}</div>`;
     return;
   }
 
   let html = addHtml + noteHtml + overviewHtml;
-  list.forEach(ev=>{ html += manage ? renderStaffEventCard(ev) : renderStudentEventCard(ev); });
+  if(list.length){
+    list.forEach(ev=>{ html += manage ? renderStaffEventCard(ev) : renderStudentEventCard(ev); });
+  } else {
+    html += `<div class="empty-state">目前沒有進行中的活動，可以在下方「已封存的活動」找到之前的紀錄</div>`;
+  }
+  html += archiveHtml;
   content.innerHTML = html;
 }
 
@@ -2220,8 +2253,8 @@ function renderRecommendSection(eventId, canDelete){
             ${r.address?`<div class="rec-address">${escapeHtml(r.address)}</div>`:''}
           </div>
           <div class="rec-actions">
-            ${(r.lat&&r.lon)?`<a class="rec-map-link" href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lon}" target="_blank" rel="noopener">🗺️ 地圖</a>`:''}
-            <button type="button" class="rec-vote-btn" data-action="vote-recommend" data-event="${eventId}" data-id="${r.id}">👍 +1</button>
+            ${(r.lat&&r.lon)?`<a class="rec-map-link" href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lon}" target="_blank" rel="noopener">地圖</a>`:''}
+            <button type="button" class="rec-vote-btn" data-action="vote-recommend" data-event="${eventId}" data-id="${r.id}">+1</button>
             ${isMyVote(r)?`<button type="button" class="outside-remove" data-action="remove-my-recommend" data-event="${eventId}" data-id="${r.id}" title="只移除我自己的推薦">移除</button>`:''}
             ${canDelete?`<button type="button" class="outside-remove" data-action="remove-recommend" data-event="${eventId}" data-id="${r.id}" title="移除這筆推薦（不論幾票）">×</button>`:''}
           </div>
@@ -2230,9 +2263,9 @@ function renderRecommendSection(eventId, canDelete){
 
   return `
   <div class="rec-section">
-    <div class="section-label">🍽️ 餐廳推薦（用 Google 地圖選餐廳，推薦後同名同地址會自動累計次數，每人最多推薦兩家；自己推薦的可以按「移除我的」取消，伙委／外食訂購人可以移除任何人的推薦）</div>
+    <div class="section-label">餐廳推薦（用 Google 地圖選餐廳，推薦後同名同地址會自動累計次數，每人最多推薦兩家；自己推薦的可以按「移除我的」取消，伙委／外食訂購人可以移除任何人的推薦）</div>
     <div class="rec-search-row">
-      <button type="button" class="btn btn-outside" data-action="open-map-modal" data-event="${eventId}">📍 開啟地圖選餐廳</button>
+      <button type="button" class="btn btn-outside" data-action="open-map-modal" data-event="${eventId}">開啟地圖選餐廳</button>
     </div>
     <div class="rec-manual-row">
       <input type="text" class="rec-manual-input" placeholder="地圖上找不到？直接輸入餐廳名稱推薦" data-action="rec-manual-input" data-event="${eventId}">
@@ -2295,7 +2328,7 @@ function renderStaffEventCard(ev){
   return `
   <div class="event-card">
     <div class="event-head">
-      <h3>${escapeHtml(ev.title)}</h3>
+      <h3>${escapeHtml(ev.title)}${ev.archived?' <span class="cancel-check-tag" style="background:var(--ink-soft);">已封存</span>':''}</h3>
       <div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span><span>由 ${escapeHtml(ev.createdBy||'')}</span>${ev.lastEditBy?`<span>最後編輯：${escapeHtml(ev.lastEditBy)} · ${fmtTime(ev.lastEditAt)}</span>`:''}</div>
     </div>
     <div class="event-body">
@@ -2308,7 +2341,7 @@ function renderStaffEventCard(ev){
       </div>
 
       ${isCoordinatorViewer ? `
-      <div class="section-label" style="margin-top:12px;">🍱 我的訂購（座號 ${escapeHtml(studentId)}，用 +/- 調整後按「確定送出」）</div>
+      <div class="section-label" style="margin-top:12px;">我的訂購（座號 ${escapeHtml(studentId)}，用 +/- 調整後按「確定送出」）</div>
       ${menu.length ? `
         <div class="outside-list">${renderOrderStepperRows(ev.id, studentId, menu)}</div>
         ${renderOrderSubmitRow(ev.id, studentId, menu, !!(myOrder&&myOrder.paid), '✓ 已確認收款')}
@@ -2325,7 +2358,10 @@ function renderStaffEventCard(ev){
 
       ${renderRecommendSection(ev.id, true)}
     </div>
-    <div class="event-delete"><button class="date-delete" data-action="delete-event" data-event="${ev.id}">刪除此活動</button></div>
+    <div class="event-delete">
+      <button class="date-delete" data-action="${ev.archived?'unarchive-event':'archive-event'}" data-event="${ev.id}">${ev.archived?'取消封存':'封存此活動'}</button>
+      <button class="date-delete" data-action="delete-event" data-event="${ev.id}" style="margin-left:12px;">刪除此活動</button>
+    </div>
   </div>`;
 }
 
@@ -2337,7 +2373,7 @@ function renderStudentEventCard(ev){
 
   return `
   <div class="event-card">
-    <div class="event-head"><h3>${escapeHtml(ev.title)}</h3><div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span></div></div>
+    <div class="event-head"><h3>${escapeHtml(ev.title)}${ev.archived?' <span class="cancel-check-tag" style="background:var(--ink-soft);">已封存</span>':''}</h3><div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span></div></div>
     <div class="event-body">
       <div class="section-label">目前已有 <b>${orders.length}</b> 人參加・總金額 <b>NT$ ${total}</b></div>
       ${menu.length ? `
@@ -2496,6 +2532,8 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const path=meal+'.choices.'+el.dataset.id+'.note';
     await updateDoc(doc(db,'entries',date), { [path]: '' });
   }
+  else if(action==='archive-event'){ ev.stopPropagation(); await archiveEvent(eventId); }
+  else if(action==='unarchive-event'){ ev.stopPropagation(); await unarchiveEvent(eventId); }
   else if(action==='delete-event'){ ev.stopPropagation(); await deleteEvent(eventId); }
   else if(action==='add-menu-item'){
     const nameInput=document.querySelector(`input[data-role="menu-name"][data-event="${eventId}"]`);
@@ -2742,7 +2780,7 @@ document.getElementById('meal-tag-skip').addEventListener('click', ()=>{
 document.getElementById('gear-btn').addEventListener('click',()=>{
   document.getElementById('set-roster').value=settings.rosterSize;
   document.getElementById('set-teacher').checked=settings.includeTeacher;
-  const tagLabelMap = {lunch:'🍱 午餐伙委', dinner:'🌙 晚餐伙委', both:'🍱🌙 午晚餐都負責'};
+  const tagLabelMap = {lunch:'午餐伙委', dinner:'晚餐伙委', both:'午晚餐都負責'};
   document.getElementById('my-meal-tag-label').textContent = '目前：'+(tagLabelMap[staffMealTag]||'尚未設定');
   renderCoordinatorList();
   renderRecurringSkipList();
