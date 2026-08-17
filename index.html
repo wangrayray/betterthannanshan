@@ -114,8 +114,7 @@
   .notif-meal-section:first-of-type{margin-top:0;}
   .notif-meal-title{font-size:12.5px;font-weight:700;color:var(--ink-soft);display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed var(--line);}
   .notif-meal-badge{font-size:10px;font-weight:700;color:var(--outside);background:var(--outside-bg);border-radius:10px;padding:0 6px;}
-  .meal-log-section{background:var(--paper);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;margin-top:6px;}
-  .meal-log-section .notif-list{max-height:420px;overflow-y:auto;}
+  .cancel-log-block .notif-list{max-height:320px;overflow-y:auto;}
 
   .tutorial-overlay{position:fixed;inset:0;z-index:80;pointer-events:auto;background:rgba(6,16,26,.82);display:none;}
   .tutorial-card{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(420px,92vw);max-height:88vh;overflow-y:auto;background:var(--paper);border-radius:14px;padding:20px;box-shadow:0 14px 44px rgba(0,0,0,.4);z-index:81;display:none;flex-direction:column;}
@@ -794,11 +793,11 @@ function jumpToCancelEntry(date, meal, label){
   }, 260);
 }
 // ============================================================
-// 退餐 log——放在「訂餐介面下面」（退餐紀錄頁籤，目前選定那一週的所有
-// 日期卡片下方）的一份完整紀錄，同時顯示「同學自己的退餐行為」跟「伙委
-// 的勾選（標記已完成）行為」，看得出誰在什麼時候做了什麼操作。跟上面
-// 🔔 通知彈窗是兩個獨立的東西：通知彈窗負責「有哪些退餐/以後不定」，
-// 這裡的 log 負責「完整的操作紀錄」。
+// 退餐 log——每一天、每一餐（午餐/晚餐各自獨立）都有自己的 log，放在
+// 那張 meal-card 最下面（見 renderStaffMealCard），同時顯示「同學自己的
+// 退餐行為」跟「伙委的勾選（標記已完成）行為」，看得出誰在什麼時候做了
+// 什麼操作。跟上面 🔔 通知彈窗是兩個獨立的東西：通知彈窗負責「有哪些
+// 退餐/以後不定」，這裡的 log 負責「這一天這一餐完整的操作紀錄」。
 // ============================================================
 function computeMealLog(){
   const list=[];
@@ -829,23 +828,18 @@ function computeMealLog(){
   list.sort((a,b)=> b.atMs - a.atMs);
   return list;
 }
-function renderMealLogRow(n){
+function computeDayMealLog(date, meal){
+  return computeMealLog().filter(n=>n.date===date && n.meal===meal);
+}
+function renderDayLogRow(n){
   const tagClass = n.type==='cancel' ? 'tag-cancel' : (n.type==='recur' ? 'tag-recur' : 'tag-processed');
   return `
       <div class="notif-row" data-action="jump-notif" data-date="${n.date}" data-meal="${n.meal}" data-label="${escapeHtml(String(n.label))}">
         <div class="notif-info">
-          <span class="notif-main"><span class="notif-tag ${tagClass}">${n.action}</span>${escapeHtml(n.date)}（週${WD[parseDate(n.date).getDay()]}）・${MEAL_LABEL[n.meal]||n.meal}・座號 ${escapeHtml(String(n.label))}</span>
+          <span class="notif-main"><span class="notif-tag ${tagClass}">${n.action}</span>座號 ${escapeHtml(String(n.label))}</span>
           <span class="notif-time">由 ${escapeHtml(n.actor)} · ${n.atMs ? new Date(n.atMs).toLocaleString('zh-TW') : ''}</span>
         </div>
       </div>`;
-}
-function renderMealLogSection(wk){
-  const list = computeMealLog().filter(n=>weekKey(n.date)===wk);
-  return `
-  <div class="meal-log-section">
-    <div class="section-label">📋 本週退餐 log（同學的退餐行為／伙委的勾選行為）</div>
-    ${list.length ? `<div class="notif-list">${list.map(renderMealLogRow).join('')}</div>` : `<div class="other-label">這一週目前沒有任何退餐相關紀錄</div>`}
-  </div>`;
 }
 
 let entries = {};      // date -> {date,lunch:{choices:{}},dinner:{choices:{}},lastEditBy,lastEditAt,note}
@@ -2035,7 +2029,6 @@ function renderMealTab(){
   html += '<div class="week-group" data-week="'+wk+'">';
   ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
   html += '</div>';
-  if(role==='staff'){ html += renderMealLogSection(wk); }
   content.innerHTML = html;
 }
 
@@ -2117,6 +2110,12 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
         </label>`).join('')}
       </div>
     </div>` : '';
+  const dayLogList = computeDayMealLog(date, meal);
+  const dayLogHtml = `
+    <div class="cancel-log-block">
+      <div class="section-label">📋 ${label} log（同學的退餐行為／伙委的勾選行為）</div>
+      ${dayLogList.length ? `<div class="notif-list">${dayLogList.map(renderDayLogRow).join('')}</div>` : `<div class="other-label">目前沒有任何紀錄</div>`}
+    </div>`;
   return `
   <div class="meal-card ${meal}${big?' lg':''}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
@@ -2131,6 +2130,7 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
     <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="name-input" data-date="${date}" data-meal="${meal}"><button data-action="add-name" data-date="${date}" data-meal="${meal}">新增</button></div>
     ${notesList.length?`<div class="other-label">備註</div><div class="chips">${notesList.map(c=>`<span class="name-chip">${escapeHtml(c.name||c.id)}：${escapeHtml(c.note)}<button data-action="clear-note" data-date="${date}" data-meal="${meal}" data-id="${c.id}">×</button></span>`).join('')}</div>`:''}
     ${cancelCheckHtml}
+    ${dayLogHtml}
   </div>`;
 }
 
