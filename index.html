@@ -313,6 +313,15 @@
   .paid-check{display:flex;align-items:center;margin-right:2px;flex-shrink:0;}
   .paid-check input{width:17px;height:17px;cursor:pointer;accent-color:var(--mine);}
   .outside-row.paid{background:var(--paid-bg);}
+  .outside-row.picked{box-shadow:inset 3px 0 0 var(--mine);}
+  .check-lab{font-size:10.5px;color:var(--ink-soft);margin-left:2px;white-space:nowrap;}
+  .deadline-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0 10px;}
+  .deadline-row input[type=datetime-local]{font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px;background:var(--paper);color:var(--ink);}
+  .deadline-tag{font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px;background:var(--paid-bg);color:var(--mine);}
+  .deadline-tag.closed{background:var(--danger-bg);color:var(--danger);}
+  .vendor-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 14px 4px;}
+  .vendor-btn{font-family:inherit;font-size:13px;font-weight:700;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);border-radius:20px;padding:5px 12px;cursor:pointer;}
+  .vendor-btn.active{background:var(--outside);color:#fff;border-color:var(--outside);}
   .paid-tag{color:var(--mine);font-weight:700;}
   .rec-section{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);}
   .rec-search-row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px;}
@@ -863,6 +872,9 @@ let gmapSelectedPlace = null; // 目前在地圖上選取、還沒送出的餐�
 let gmapModalEventId = null;  // 目前地圖視窗是為了哪個外食活動打開的
 let gmapLibLoaded = false;
 let settings = { rosterSize:49, includeTeacher:true };
+// 伙委訂餐頁「本週訂了哪家」：週一日期 -> 店家名稱，存在 settings/weekVendors 的 vendors 欄位。
+const WEEK_VENDORS = ['天仁','士福','寬大','久翔','統鮮'];
+let weekVendors = {};
 let studentsRoster = {}; // studentId -> {name}
 let staffList = {};      // email -> {name}
 let eventCoordinators = {}; // seatNo -> {expiresAt,grantedBy,grantedAt}
@@ -1236,7 +1248,7 @@ function teardownState(){
   teardownListeners();
   entries={}; events={}; eventMenu={}; eventOrders={};
   eventRecommendations={};
-  studentsRoster={}; staffList={}; eventCoordinators={}; recurringSkips={}; draftChoice={}; staffDraft={}; eventOrderDraft={};
+  weekVendors={}; studentsRoster={}; staffList={}; eventCoordinators={}; recurringSkips={}; draftChoice={}; staffDraft={}; eventOrderDraft={};
   role=''; staffName=''; studentId=''; myEmail='';
   collapsedDates=new Set();
   defaultedCollapseDates=new Set();
@@ -1339,6 +1351,11 @@ function subscribeAll(){
     if(snap.exists()) settings=Object.assign({rosterSize:49,includeTeacher:true}, snap.data());
     render();
   }, subErr('settings')));
+
+  unsubs.push(onSnapshot(doc(db,'settings','weekVendors'), snap=>{
+    weekVendors = snap.exists() ? (snap.data().vendors||{}) : {};
+    render();
+  }, subErr('weekVendors')));
 
   fetchStudentsRoster();
   fetchStaffList();
@@ -1578,12 +1595,41 @@ async function submitMealChanges(date, meal){
 // ============================================================
 // EVENT（外食）操作
 // ============================================================
-async function createEvent(title){
+// 訂購截止時間：events/{id}.deadline 存毫秒時間戳（數字），沒設定代表不限時。
+// firestore.rules 的 eventOpen() 用同一個欄位，在後端擋掉截止後一般同學的寫入。
+function eventDeadlineMs(ev){ return (ev && typeof ev.deadline==='number') ? ev.deadline : null; }
+function isEventClosed(ev){ const d=eventDeadlineMs(ev); return d!==null && Date.now()>=d; }
+function fmtDeadline(ms){
+  const d=new Date(ms);
+  return (d.getMonth()+1)+'/'+d.getDate()+'（'+WD[d.getDay()]+'）'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function toDatetimeLocalValue(ms){
+  const d=new Date(ms);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+async function createEvent(title, deadlineMs){
   if(!title) return;
   const id=uid();
-  await setDoc(doc(db,'events',id), {title, createdAt:new Date().toISOString(), createdBy:identity(), lastEditBy:identity(), lastEditAt:new Date().toISOString()});
+  const data={title, createdAt:new Date().toISOString(), createdBy:identity(), lastEditBy:identity(), lastEditAt:new Date().toISOString()};
+  if(typeof deadlineMs==='number') data.deadline=deadlineMs;
+  await setDoc(doc(db,'events',id), data);
   showToast('已建立外食訂購活動，請先新增菜單選項');
 }
+async function setEventDeadline(eventId, ms){
+  await updateDoc(doc(db,'events',eventId), {deadline: ms===null ? deleteField() : ms, lastEditBy:identity(), lastEditAt:new Date().toISOString()});
+  showToast(ms===null ? '已取消訂購截止時間' : '已設定訂購截止：'+fmtDeadline(ms));
+}
+async function setWeekVendor(wk, vendor){
+  const same = weekVendors[wk]===vendor;
+  await setDoc(doc(db,'settings','weekVendors'), {vendors:{[wk]: same ? deleteField() : vendor}}, {merge:true});
+}
+// 截止時間一到，畫面要自動切換成截止後的樣子（不用等重新整理）。
+let lastClosedSig='';
+setInterval(()=>{
+  if(!role) return;
+  const sig=Object.values(events).map(e=>e.id+(isEventClosed(e)?'1':'0')).join(',');
+  if(sig!==lastClosedSig){ const first=lastClosedSig===''; lastClosedSig=sig; if(!first && activeTab==='event') render(); }
+}, 15000);
 async function touchEvent(eventId){
   await setDoc(doc(db,'events',eventId), {lastEditBy:identity(), lastEditAt:new Date().toISOString()}, {merge:true});
 }
@@ -1648,6 +1694,7 @@ function itemsEqual(a,b){
   return ak.every((k,i)=> k===bk[i] && a[k]===b[k]);
 }
 function adjustOrderQty(eventId, label, itemId, delta){
+  if(isEventClosed(events[eventId]) && !canManageEvents()){ showToast('已超過訂購截止時間'); return; }
   const key=orderDraftKey(eventId,label);
   const committed=committedOrderItems(eventId,label);
   const base = eventOrderDraft[key] ? eventOrderDraft[key].items : committed;
@@ -1666,6 +1713,12 @@ async function submitEventOrderDraft(eventId, label){
   const key=orderDraftKey(eventId,label);
   const draft=eventOrderDraft[key];
   if(!draft) return;
+  if(isEventClosed(events[eventId]) && !canManageEvents()){
+    delete eventOrderDraft[key];
+    showToast('已超過訂購截止時間，無法再送出');
+    render();
+    return;
+  }
   const existing=(eventOrders[eventId]||[]).find(o=>o.id===label);
   const committed=(existing && existing.items) || {};
   const draftItems=draft.items || {};
@@ -1732,14 +1785,27 @@ function renderOrderSubmitRow(eventId, label, menu, paidNow, paidLabel){
 async function setItemQty(eventId, label, itemId, val){
   const qty=Math.max(0, Math.floor(Number(val)||0));
   const existing=(eventOrders[eventId]||[]).find(o=>o.id===label);
-  const items = existing ? Object.assign({}, existing.items) : {};
-  if(qty<=0) delete items[itemId]; else items[itemId]=qty;
+  if(existing){
+    // 用 dot-path 更新單一品項；數量歸零要 deleteField()，直接 merge 整包 items
+    // 不會把舊的數量從 Firestore 刪掉。
+    await updateDoc(doc(db,'events',eventId,'orders',label), {
+      ['items.'+itemId]: qty>0 ? qty : deleteField(), updatedBy:identity(), updatedAt:serverTimestamp()
+    });
+  } else {
+    await setDoc(doc(db,'events',eventId,'orders',label), {
+      studentId:label, name:label, paid:false, items: qty>0 ? {[itemId]:qty} : {},
+      eventId, updatedBy:identity(), updatedAt:serverTimestamp()
+    });
+  }
+}
+// 截止後伙委／外食訂購人替座號同學補登一份訂單（該同學當初沒下單）。
+async function addRosterOrder(eventId, label){
+  if((eventOrders[eventId]||[]).some(o=>o.id===label)){ showToast('座號 '+label+' 已經有訂單了'); return; }
   await setDoc(doc(db,'events',eventId,'orders',label), {
-    studentId: existing ? (existing.studentId||label) : label,
-    name: existing ? (existing.name||label) : label,
-    paid: existing ? !!existing.paid : false,
-    items, eventId, updatedBy:identity(), updatedAt:serverTimestamp()
-  }, {merge:true});
+    studentId:label, name:label, paid:false, pickedUp:false, items:{},
+    eventId, updatedBy:identity(), updatedAt:serverTimestamp()
+  });
+  showToast('已新增座號 '+label+' 的訂單，請用 +/- 設定品項');
 }
 // 伙委代填「其他訂購人」（不在座號名單上）那個區塊維持原本「點了就直接
 // 生效」的習慣，跟其他代填操作（例如打勾已繳款）一致，不套用確認送出流程；
@@ -2045,7 +2111,9 @@ function renderMealTab(){
     </div>` : ''}
   </div>`;
 
-  let html = addBarHtml + noteHtml + `<div class="week-title-bar">${pickerHtml}${weekCollapseBtn}${weekDeleteBtn}</div>`;
+  const vendorHtml = role==='staff' ? `
+  <div class="vendor-bar"><span class="section-label" style="margin:0;">本週訂餐店家</span>${WEEK_VENDORS.map(v=>`<button type="button" class="vendor-btn ${weekVendors[wk]===v?'active':''}" data-action="set-week-vendor" data-week="${wk}" data-vendor="${v}">${v}</button>`).join('')}</div>` : '';
+  let html = addBarHtml + noteHtml + `<div class="week-title-bar">${pickerHtml}${weekCollapseBtn}${weekDeleteBtn}</div>` + vendorHtml;
   html += '<div class="week-group" data-week="'+wk+'">';
   ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
   html += '</div>';
@@ -2212,7 +2280,7 @@ function renderEventTab(){
 
   let addHtml='';
   if(manage){
-    addHtml = `<div class="add-bar"><label for="event-title-input">活動名稱</label><input type="text" id="event-title-input" placeholder="例如：8/10 雞排店合購"><button class="btn btn-outside" id="create-event-btn">＋新增外食訂購活動</button></div>`;
+    addHtml = `<div class="add-bar"><label for="event-title-input">活動名稱</label><input type="text" id="event-title-input" placeholder="例如：8/10 雞排店合購"><label for="event-deadline-input">訂購截止（可留白）</label><input type="datetime-local" id="event-deadline-input"><button class="btn btn-outside" id="create-event-btn">＋新增外食訂購活動</button></div>`;
   }
   const noteHtml = pendingRosterNote() + coordinatorNote();
 
@@ -2280,6 +2348,32 @@ function renderRecommendSection(eventId, canDelete){
   </div>`;
 }
 
+function renderStaffOrderRow(ev, o, menu, editable, removable){
+  const sub=orderTotal(o, menu);
+  const paid=!!o.paid, picked=!!o.pickedUp;
+  const pad = editable ? ' style="padding-top:4px;"' : '';
+  const checks = `<label class="paid-check" title="已繳款"${pad}><input type="checkbox" data-action="toggle-paid" data-event="${ev.id}" data-id="${o.id}" ${paid?'checked':''}><span class="check-lab">繳</span></label>`
+    + `<label class="paid-check" title="已取餐"${pad}><input type="checkbox" data-action="toggle-picked" data-event="${ev.id}" data-id="${o.id}" ${picked?'checked':''}><span class="check-lab">取</span></label>`;
+  const rowCls = 'outside-row'+(paid?' paid':'')+(picked?' picked':'');
+  if(!editable){
+    const itemList = menu.filter(mi=>(o.items&&o.items[mi.id])>0).map(mi=>escapeHtml(mi.name)+'×'+o.items[mi.id]).join('、') || '（尚未選擇品項）';
+    return `<div class="${rowCls}">${checks}<span class="outside-name">${escapeHtml(o.name||o.id)}</span><span style="flex:1;font-size:12.5px;color:var(--ink-soft);">${itemList}</span><span class="outside-currency">NT$${sub}</span></div>`;
+  }
+  const itemInputs = menu.map(mi=>`
+      <span class="qty-item">
+        <span class="qty-item-name">${escapeHtml(mi.name)}</span>
+        ${renderStaffQtyStepper(ev.id, o.id, mi.id, (o.items&&o.items[mi.id])||0)}
+      </span>`).join('');
+  return `
+    <div class="${rowCls}" style="align-items:flex-start;flex-wrap:wrap;">
+      ${checks}
+      <span class="outside-name"${pad}>${escapeHtml(o.name||o.id)}</span>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;">${itemInputs || '<span class="other-label">尚未新增菜單選項</span>'}</div>
+      <span class="outside-currency"${pad}>NT$${sub}</span>
+      ${removable?`<button class="outside-remove" data-action="remove-participant" data-event="${ev.id}" data-id="${o.id}">×</button>`:''}
+    </div>`;
+}
+
 function renderStaffEventCard(ev){
   const menu = eventMenu[ev.id]||[];
   const orders = eventOrders[ev.id]||[];
@@ -2305,30 +2399,24 @@ function renderStaffEventCard(ev){
   const rosterOrders = orders.filter(o=>roster.includes(o.id));
   const customOrders = orders.filter(o=>!roster.includes(o.id));
 
-  const rosterRows = rosterOrders.map(o=>{
-    const sub=orderTotal(o, menu);
-    const paid=!!o.paid;
-    const itemList = menu.filter(mi=>(o.items&&o.items[mi.id])>0).map(mi=>escapeHtml(mi.name)+'×'+o.items[mi.id]).join('、') || '（尚未選擇品項）';
-    return `<div class="outside-row ${paid?'paid':''}"><label class="paid-check" title="已繳款"><input type="checkbox" data-action="toggle-paid" data-event="${ev.id}" data-id="${o.id}" ${paid?'checked':''}></label><span class="outside-name">${escapeHtml(o.name||o.id)}</span><span style="flex:1;font-size:12.5px;color:var(--ink-soft);">${itemList}</span><span class="outside-currency">NT$${sub}</span></div>`;
-  }).join('');
-
-  const customRows = customOrders.map(o=>{
-    const sub = orderTotal(o, menu);
-    const paid=!!o.paid;
-    const itemInputs = menu.map(mi=>`
-      <span class="qty-item">
-        <span class="qty-item-name">${escapeHtml(mi.name)}</span>
-        ${renderStaffQtyStepper(ev.id, o.id, mi.id, (o.items&&o.items[mi.id])||0)}
-      </span>`).join('');
-    return `
-    <div class="outside-row ${paid?'paid':''}" style="align-items:flex-start;flex-wrap:wrap;">
-      <label class="paid-check" title="已繳款" style="padding-top:4px;"><input type="checkbox" data-action="toggle-paid" data-event="${ev.id}" data-id="${o.id}" ${paid?'checked':''}></label>
-      <span class="outside-name" style="padding-top:4px;">${escapeHtml(o.name||o.id)}</span>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;">${itemInputs || '<span class="other-label">尚未新增菜單選項</span>'}</div>
-      <span class="outside-currency" style="padding-top:4px;">NT$${sub}</span>
-      <button class="outside-remove" data-action="remove-participant" data-event="${ev.id}" data-id="${o.id}">×</button>
-    </div>`;
-  }).join('');
+  const closed = isEventClosed(ev);
+  const pickedCount = orders.filter(o=>o.pickedUp).length;
+  // 繳款與取餐是兩個各自獨立的勾選框。截止前座號同學的品項只有本人能改（避免
+  // 伙委代填蓋掉本人剛送出的資料）；截止後本人不能再改，伙委／外食訂購人才
+  // 在這裡用 +/- 直接修改。
+  const rosterRows = rosterOrders.map(o=>renderStaffOrderRow(ev, o, menu, closed, false)).join('');
+  const customRows = customOrders.map(o=>renderStaffOrderRow(ev, o, menu, true, true)).join('');
+  const dl = eventDeadlineMs(ev);
+  const deadlineHtml = `
+      <div class="section-label">訂購截止時間（截止後一般同學只能看到自己訂了什麼與是否取餐，不能再修改）</div>
+      <div class="deadline-row">
+        <span class="deadline-tag ${closed?'closed':''}">${dl===null?'未設定（不限時）':(closed?'已截止 ':'截止於 ')+fmtDeadline(dl)}</span>
+        <input type="datetime-local" data-role="deadline-input" data-event="${ev.id}" value="${dl===null?'':toDatetimeLocalValue(dl)}">
+        <button class="btn btn-outside" data-action="set-deadline" data-event="${ev.id}">設定截止</button>
+        ${dl===null?'':`<button class="btn btn-ghost" data-action="clear-deadline" data-event="${ev.id}">取消限時</button>`}
+      </div>`;
+  const addRosterHtml = closed ? `
+      <div class="add-name-row"><input type="text" inputmode="numeric" placeholder="補登訂單：輸入座號後 Enter" data-action="roster-order-input" data-event="${ev.id}"><button data-action="add-roster-order" data-event="${ev.id}">補登</button></div>` : '';
 
   return `
   <div class="event-card">
@@ -2337,6 +2425,7 @@ function renderStaffEventCard(ev){
       <div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span><span>由 ${escapeHtml(ev.createdBy||'')}</span>${ev.lastEditBy?`<span>最後編輯：${escapeHtml(ev.lastEditBy)} · ${fmtTime(ev.lastEditAt)}</span>`:''}</div>
     </div>
     <div class="event-body">
+      ${deadlineHtml}
       <div class="section-label">菜單選項（設定好後，同學會在自己的介面自行選取）</div>
       <div class="chips">${menuChips || '<span class="other-label">尚未新增選項，請先在下方新增</span>'}</div>
       <div class="add-name-row">
@@ -2353,13 +2442,14 @@ function renderStaffEventCard(ev){
       ` : `<div class="other-label">尚未新增菜單選項，請先在上方新增後再回來選購</div>`}
       ` : ''}
 
-      <div class="section-label" style="margin-top:12px;">座號同學訂購狀況（由同學自行選取，此處僅顯示，無法在此代填）</div>
+      <div class="section-label" style="margin-top:12px;">${closed?'座號同學訂購狀況（已截止：可直接修改品項，並分別勾選「繳」已繳款、「取」已取餐）':'座號同學訂購狀況（由同學自行選取，此處僅顯示，無法在此代填；勾選「繳」已繳款、「取」已取餐）'}</div>
       ${rosterOrders.length ? `<div class="outside-list">${rosterRows}</div>` : `<div class="other-label">目前還沒有同學下單</div>`}
+      ${addRosterHtml}
 
       <div class="section-label" style="margin-top:12px;">其他訂購人（非座號名單，可在此手動設定數量）</div>
       ${customOrders.length ? `<div class="outside-list">${customRows}</div>` : ''}
       <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="event-name-input" data-event="${ev.id}"><button data-action="add-event-name" data-event="${ev.id}">新增</button></div>
-      <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}・<span class="paid-tag">已繳款 ${paidCount} 人（NT$ ${paidTotal}）</span>${unpaidCount?`・尚未繳款 ${unpaidCount} 人`:''}</div>
+      <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}・<span class="paid-tag">已繳款 ${paidCount} 人（NT$ ${paidTotal}）</span>${unpaidCount?`・尚未繳款 ${unpaidCount} 人`:''}・已取餐 ${pickedCount} 人${orders.length-pickedCount?`・尚未取餐 ${orders.length-pickedCount} 人`:''}</div>
 
       ${renderRecommendSection(ev.id, true)}
     </div>
@@ -2375,10 +2465,28 @@ function renderStudentEventCard(ev){
   const orders = eventOrders[ev.id]||[];
   const mine = orders.find(o=>o.id===studentId) || {items:{}};
   const total = eventTotal(ev);
+  const closed = isEventClosed(ev);
+  const dl = eventDeadlineMs(ev);
+  const head = `<div class="event-head"><h3>${escapeHtml(ev.title)}${ev.archived?' <span class="cancel-check-tag" style="background:var(--ink-soft);">已封存</span>':''}</h3><div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span>${dl!==null?`<span class="deadline-tag ${closed?'closed':''}">${closed?'已截止':'截止於 '+fmtDeadline(dl)}</span>`:''}</div></div>`;
+
+  if(closed){
+    // 截止後一般同學只看得到「自己訂了什麼」與「是否取餐」，不能再修改。
+    const mineItems = menu.filter(mi=>(mine.items&&mine.items[mi.id])>0);
+    const rows = mineItems.map(mi=>`<div class="outside-row"><span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)} × ${mine.items[mi.id]}</span><span class="outside-currency">NT$${mi.price*mine.items[mi.id]}</span></div>`).join('');
+    return `
+  <div class="event-card">
+    ${head}
+    <div class="event-body">
+      <div class="section-label">訂購已截止（${fmtDeadline(dl)}），以下是你訂的內容</div>
+      ${mineItems.length ? `<div class="outside-list">${rows}</div><div class="outside-total">我的金額 NT$ ${orderTotal(mine, menu)}</div>` : `<div class="other-label">你這次沒有訂購</div>`}
+      ${mineItems.length ? `<div class="outside-total" style="margin-top:6px;">${mine.pickedUp?'✓ 已取餐':'尚未取餐'}</div>` : ''}
+    </div>
+  </div>`;
+  }
 
   return `
   <div class="event-card">
-    <div class="event-head"><h3>${escapeHtml(ev.title)}${ev.archived?' <span class="cancel-check-tag" style="background:var(--ink-soft);">已封存</span>':''}</h3><div class="event-meta"><span>建立於 ${fmtTime(ev.createdAt)}</span></div></div>
+    ${head}
     <div class="event-body">
       <div class="section-label">目前已有 <b>${orders.length}</b> 人參加・總金額 <b>NT$ ${total}</b></div>
       ${menu.length ? `
@@ -2562,6 +2670,24 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const newQty=Math.max(0, Number(el.dataset.qty||0)+Number(el.dataset.delta));
     await setItemQty(eventId, el.dataset.label, el.dataset.item, newQty);
   }
+  else if(action==='set-deadline'){
+    const inp=document.querySelector(`input[data-role="deadline-input"][data-event="${eventId}"]`);
+    const ms=inp && inp.value ? new Date(inp.value).getTime() : NaN;
+    if(isNaN(ms)){ showToast('請先選擇截止的日期與時間'); return; }
+    await setEventDeadline(eventId, ms);
+  }
+  else if(action==='clear-deadline'){ await setEventDeadline(eventId, null); }
+  else if(action==='add-roster-order'){
+    const input=document.querySelector(`input[data-action="roster-order-input"][data-event="${eventId}"]`);
+    const label=normalizeSeatNo(input.value.trim());
+    if(!label || !rosterLabels().includes(label)){ showToast('找不到這個座號'); return; }
+    await addRosterOrder(eventId, label);
+    input.value='';
+  }
+  else if(action==='set-week-vendor'){
+    if(role!=='staff') return;
+    await setWeekVendor(el.dataset.week, el.dataset.vendor);
+  }
   else if(action==='add-event-name'){
     const input=document.querySelector(`input[data-action="event-name-input"][data-event="${eventId}"]`);
     const name=input.value.trim(); if(!name) return;
@@ -2613,6 +2739,13 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
     });
     ev.target.value='';
   }
+  else if(ev.target.dataset.action==='roster-order-input' && ev.key==='Enter'){
+    ev.preventDefault();
+    const eventId=ev.target.dataset.event, label=normalizeSeatNo(ev.target.value.trim());
+    if(!label || !rosterLabels().includes(label)){ showToast('找不到這個座號'); return; }
+    await addRosterOrder(eventId, label);
+    ev.target.value='';
+  }
   else if(ev.target.dataset.action==='event-name-input' && ev.key==='Enter'){
     ev.preventDefault();
     const eventId=ev.target.dataset.event, name=ev.target.value.trim();
@@ -2641,6 +2774,12 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
       paid: ev.target.checked, paidBy:identity(), paidAt:new Date().toISOString(), updatedAt:serverTimestamp()
     });
   }
+  else if(ev.target.dataset.action==='toggle-picked'){
+    // 取餐與繳款是各自獨立的勾選框，互不影響。
+    await updateDoc(doc(db,'events',ev.target.dataset.event,'orders',ev.target.dataset.id), {
+      pickedUp: ev.target.checked, pickedUpBy:identity(), pickedUpAt:new Date().toISOString(), updatedAt:serverTimestamp()
+    });
+  }
   else if(ev.target.dataset.action==='toggle-cancel-processed'){
     // 這一餐（午餐/晚餐各自獨立）某個座號的退餐「已完成」勾選：連同是誰、
     // 什麼時候勾的一起記錄下來，供上面 🔔 退餐 log 顯示「誰進行了什麼操作」。
@@ -2666,7 +2805,7 @@ document.getElementById('content').addEventListener('change', async (ev)=>{
 document.getElementById('content').addEventListener('click', async (ev)=>{
   if(ev.target.id==='add-date-btn'){ const v=document.getElementById('date-input').value; if(!v){showToast('請先選擇日期');return;} addDate(v,{copyFromPrevWeek:true}); }
   else if(ev.target.id==='add-week-btn'){ const v=document.getElementById('date-input').value; if(!v){showToast('請先選擇日期');return;} addWeek(v); }
-  else if(ev.target.id==='create-event-btn'){ const inp=document.getElementById('event-title-input'); const t=inp.value.trim(); if(!t){showToast('請輸入活動名稱');return;} createEvent(t); inp.value=''; }
+  else if(ev.target.id==='create-event-btn'){ const inp=document.getElementById('event-title-input'); const t=inp.value.trim(); if(!t){showToast('請輸入活動名稱');return;} const dInp=document.getElementById('event-deadline-input'); const dms=dInp.value?new Date(dInp.value).getTime():NaN; createEvent(t, isNaN(dms)?undefined:dms); inp.value=''; dInp.value=''; }
 });
 
 
