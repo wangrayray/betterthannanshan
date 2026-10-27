@@ -14,6 +14,7 @@ Firestore + Authentication** 的版本，可以直接放上 GitHub Pages。
 
 ```
 settings/config              全班共用設定（座號數、是否含「師」）
+settings/weekVendors        伙委訂餐頁「本週訂了哪家」：vendors.{週一日期} = 天仁／士福／寬大／久翔／統鮮
 students/{seatNo}            全班座號名冊（伙委在設定頁存檔時自動同步）
 staff/{email}                伙委名單，文件 id = 該伙委的登入 email
 eventCoordinators/{seatNo}   外食訂購人名單，效期 14 天，過期自動失效
@@ -24,9 +25,10 @@ entries/{date}                每日訂餐紀錄
   dinner.choices.{seatNo}      該日晚餐每人的選擇，格式同上
   lunch_choice/{seatNo}        （舊版子集合，已不再寫入，只保留給搬移工具讀取用）
   dinner_choice/{seatNo}       （舊版子集合，已不再寫入，只保留給搬移工具讀取用）
-events/{eventId}              外食訂購活動
+events/{eventId}              外食訂購活動（deadline：訂購截止時間，毫秒時間戳，可不設）
   └ menu/{itemId}              菜單品項（名稱、金額，由伙委/外食訂購人設定）
-  └ orders/{seatNo}            每人的訂購內容（品項＋數量，由同學自己選取）
+  └ orders/{seatNo}            每人的訂購內容（品項＋數量，由同學自己選取）；paid＝已繳款、
+                               pickedUp＝已取餐，兩個欄位各自獨立，只有伙委／外食訂購人能改
 ```
 
 外食訂單（`orders`）仍然拆成每人一份子文件，因為 Firestore 規則只能檢查
@@ -159,6 +161,24 @@ collection 建立 `onSnapshot` 常駐監聽，只要任何一個人寫入一筆�
   的 `lunch.choices`／`dinner.choices` 欄位（`migrateLegacyChoices()`）。這個
   按鈕是冪等設計：已經搬移過的座號會直接跳過，不會覆蓋，所以可以放心重複按
   到看到「搬移完成」為止；舊子集合資料搬移後不會被刪除，純粹留著當備份。
+
+### 外食訂購截止時間、繳款／取餐
+
+- 建立活動時可以填「訂購截止」，之後也能在活動卡片上方修改或取消。
+- **截止前**：同學照舊自己選品項、按「確定送出」；伙委／外食訂購人看得到每個人的訂單，
+  並可勾選各自獨立的「繳」（已繳款）與「取」（已取餐）。
+- **截止後**：一般同學的頁面只剩「自己訂了什麼」與「是否已取餐」，不能再改，也看不到其他人
+  和餐廳推薦；伙委／外食訂購人仍可用 +/- 修改任何人的品項、補登沒下單的座號，並勾選繳款與取餐。
+- 後端同步擋：`firestore.rules` 的 `eventOpen()` 會查活動的 `deadline`，截止後同學無法再寫入自己的
+  訂單；同學也不能自己勾繳款／取餐欄位。伙委／外食訂購人的寫入不受 1 秒節流限制。
+- 訂單寫入規則從 `{path=**}/orders` 拆成 `/events/{eventId}/orders/{sid}`（才拿得到 eventId），
+  collectionGroup 讀取仍然保留在最外層。**這次 `firestore.rules` 有改，需要重新部署**
+  （`firebase deploy --only firestore:rules`）。
+
+### 每週訂餐店家（桶餐訂餐頁）
+
+伙委在一般訂餐畫面（不是外食）週次列下方，可為該週選擇「天仁／士福／寬大／久翔／統鮮」其中一家，
+再點一次同一家可取消。存在 `settings/weekVendors`，不需要額外規則。
 
 ## 角色權限（Firestore Rules 強制）
 

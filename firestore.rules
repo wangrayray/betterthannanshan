@@ -231,11 +231,40 @@ service cloud.firestore {
       allow write: if isStaff() || isEventCoordinator();
     }
 
+    // orders：collectionGroup 讀取（伙委頁一次看全部活動）一樣寫在最外層；
+    // 寫入則改成下方 /events/{eventId}/orders/{sid} 的具名路徑規則，因為要用
+    // eventId 去查該活動的訂購截止時間（deadline），萬用字元規則拿不到 eventId。
     match /{path=**}/orders/{sid} {
       allow read: if isSignedIn();
-      allow create: if (isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp();
-      allow update: if (isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent())) && hasFreshTimestamp() && !isThrottled(resource.data);
-      allow delete: if (isStaff() || isEventCoordinator() || (isOwnId(sid) && isRosterStudent())) && !isThrottled(resource.data);
+    }
+
+    // 活動是否還在訂購時間內：沒有設定 deadline 代表不限時；deadline 存毫秒數。
+    function eventOpen(eventId) {
+      let d = get(/databases/$(database)/documents/events/$(eventId)).data.get('deadline', null);
+      return d == null || request.time.toMillis() < d;
+    }
+    // 同學不能自己動繳款／取餐欄位（只有伙委／外食訂購人能勾）。
+    function touchesPayOrPickup() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['paid', 'paidBy', 'paidAt', 'pickedUp', 'pickedUpBy', 'pickedUpAt']);
+    }
+    function isCleanNewStudentOrder() {
+      return !request.resource.data.keys().hasAny(['paidBy', 'paidAt', 'pickedUp', 'pickedUpBy', 'pickedUpAt'])
+        && request.resource.data.get('paid', false) == false;
+    }
+
+    // 伙委／外食訂購人：截止前後都可以改任何人的訂單、勾繳款與取餐（不受 1 秒節流限制，
+    // 免得連續勾「繳款」「取餐」被擋）。同學：只能改自己的訂單，而且要在截止時間
+    // 之前，也不能動繳款／取餐欄位。
+    match /events/{eventId}/orders/{sid} {
+      allow create: if hasFreshTimestamp() && (
+        isStaff() || isEventCoordinator() ||
+        (isOwnId(sid) && isRosterStudent() && eventOpen(eventId) && isCleanNewStudentOrder()));
+      allow update: if hasFreshTimestamp() && (
+        isStaff() || isEventCoordinator() ||
+        (isOwnId(sid) && isRosterStudent() && eventOpen(eventId) && !isThrottled(resource.data) && !touchesPayOrPickup()));
+      allow delete: if isStaff() || isEventCoordinator() ||
+        (isOwnId(sid) && isRosterStudent() && eventOpen(eventId) && !isThrottled(resource.data));
     }
 
     // 餐廳推薦：任何在名冊上的同學、伙委、外食訂購人都可以推薦/+1（累加次數）。
