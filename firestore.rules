@@ -243,10 +243,15 @@ service cloud.firestore {
       let d = get(/databases/$(database)/documents/events/$(eventId)).data.get('deadline', null);
       return d == null || request.time.toMillis() < d;
     }
-    // 同學不能自己動繳款／取餐欄位（只有伙委／外食訂購人能勾）。
-    function touchesPayOrPickup() {
+    // 同學不能自己動繳款欄位（只有伙委／外食訂購人能勾「已繳款」）。
+    function touchesPaid() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(['paid', 'paidBy', 'paidAt', 'pickedUp', 'pickedUpBy', 'pickedUpAt']);
+        .hasAny(['paid', 'paidBy', 'paidAt']);
+    }
+    // 同學自己勾「已取餐」：只動取餐相關欄位，所以截止後也允許。
+    function onlyPickupChange() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['pickedUp', 'pickedUpBy', 'pickedUpAt', 'updatedAt']);
     }
     function isCleanNewStudentOrder() {
       return !request.resource.data.keys().hasAny(['paidBy', 'paidAt', 'pickedUp', 'pickedUpBy', 'pickedUpAt'])
@@ -254,15 +259,15 @@ service cloud.firestore {
     }
 
     // 伙委／外食訂購人：截止前後都可以改任何人的訂單、勾繳款與取餐（不受 1 秒節流限制，
-    // 免得連續勾「繳款」「取餐」被擋）。同學：只能改自己的訂單，而且要在截止時間
-    // 之前，也不能動繳款／取餐欄位。
+    // 免得連續勾「繳款」「取餐」被擋）。同學：只能改自己的訂單，品項要在截止時間之前
+    // 才能改，不能動繳款欄位；「已取餐」勾選則截止前後都可以自己勾。
     match /events/{eventId}/orders/{sid} {
       allow create: if hasFreshTimestamp() && (
         isStaff() || isEventCoordinator() ||
         (isOwnId(sid) && isRosterStudent() && eventOpen(eventId) && isCleanNewStudentOrder()));
       allow update: if hasFreshTimestamp() && (
         isStaff() || isEventCoordinator() ||
-        (isOwnId(sid) && isRosterStudent() && eventOpen(eventId) && !isThrottled(resource.data) && !touchesPayOrPickup()));
+        (isOwnId(sid) && isRosterStudent() && (eventOpen(eventId) || onlyPickupChange()) && !isThrottled(resource.data) && !touchesPaid()));
       allow delete: if isStaff() || isEventCoordinator() ||
         (isOwnId(sid) && isRosterStudent() && eventOpen(eventId) && !isThrottled(resource.data));
     }
