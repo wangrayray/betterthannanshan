@@ -238,6 +238,7 @@
   .number-cell.veg{background:var(--mine);color:#fff;}
   .number-cell.cancel{background:var(--paper);color:var(--danger);border:1px dashed var(--danger);text-decoration:line-through;}
   .number-cell.recur{background:var(--paper);color:var(--outside);border:1px dashed var(--outside);}
+  .number-cell.extra{background:var(--outside);color:#fff;}
   .number-cell.pending{outline:2px dashed var(--outside);outline-offset:1px;}
   .pending-bar{margin:0 0 10px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--outside-bg);border:1px dashed var(--outside);border-radius:10px;font-size:12.5px;color:var(--outside);}
   .meal-stat-line{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);background:var(--paper-soft);border-radius:8px;padding:7px 10px;margin:0 0 8px;}
@@ -602,7 +603,7 @@ const db = initializeFirestore(app, {
 // 狀態
 // ============================================================
 const WD = ['日','一','二','三','四','五','六'];
-const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐', recur:'以後不定'};
+const STATUS_LABEL = {meat:'葷食', veg:'素食', cancel:'退餐', recur:'以後不定', extra:'加訂'};
 const MEAL_LABEL = {lunch:'午餐', dinner:'晚餐'};
 const NOTIF_SEEN_KEY = 'cancelNotifLastSeen';
 let notifTypeFilter = 'cancel'; // 'cancel'（退餐）| 'recur'（以後不定）：🔔通知面板上方按鈕決定目前要看哪一種
@@ -1145,7 +1146,7 @@ const TUTORIAL_STEPS = [
 ];
 const STAFF_TUTORIAL_STEPS = [
   { title:'伙委教學', desc:'帶你快速認識伙委專屬的按鈕功能，重點放在「退餐紀錄」的管理；外食訂購同學大多能自己操作，後面會簡單帶過。用示範畫面走一遍，不是真實資料。' },
-  { title:'點座號直接切換狀態', desc:'伙委可以直接點座號格，幫忘記選的同學代為循環切換：未選 → 葷 → 素 → 退餐 → 未選。',
+  { title:'點座號直接切換狀態', desc:'伙委可以直接點座號格，幫忘記選的同學代為循環切換：未選 → 葷 → 素 → 退餐 → 以後不定 → 加訂 → 未選。',
     stageHtml:`<div class="meal-card lunch" style="max-width:280px;">
       <div class="meal-title"><span class="dot"></span>午餐（示範）</div>
       <div class="section-label">點座號切換狀態</div>
@@ -1437,6 +1438,8 @@ async function copyMealBetweenDates(fromKey, toDateStr, meal){
       else return; // 找不到退餐前的紀錄，留白
     } else if(o.status==='recur'){
       return; // 以後這天都不定：留白，不延續
+    } else if(o.status==='extra'){
+      return; // 加訂是臨時多訂的，不延續到新的一天／一週
     }
     fieldUpdates[meal+'.choices.'+id] = {seatNo:o.seatNo||id, studentId:o.studentId||id, name:o.name||id, status:nextStatus, prevStatus:null, note:o.note||'', updatedBy:identity(), updatedAt:serverTimestamp()};
   });
@@ -1508,13 +1511,14 @@ function mealCounts(choiceList){
   const veg=list.filter(c=>c.status==='veg').length;
   const cancel=list.filter(c=>c.status==='cancel').length;
   const recur=list.filter(c=>c.status==='recur').length;
+  const extra=list.filter(c=>c.status==='extra').length;
   const chosenRoster=list.filter(c=>roster.includes(c.id)).length;
   const unset=Math.max(0, roster.length-chosenRoster);
-  return {meat,veg,cancel,recur,unset,ordered:meat+veg};
+  return {meat,veg,cancel,recur,extra,unset,ordered:meat+veg+extra};
 }
 function mealSummaryText(choiceList){
   const c=mealCounts(choiceList);
-  return '訂'+c.ordered+'（葷'+c.meat+'／素'+c.veg+'）・退'+c.cancel+(c.recur?'・不定'+c.recur:'')+'・未選'+c.unset;
+  return '訂'+c.ordered+'（葷'+c.meat+'／素'+c.veg+(c.extra?'／加訂'+c.extra:'')+'）・退'+c.cancel+(c.recur?'・不定'+c.recur:'')+'・未選'+c.unset;
 }
 // 伙委端「批次送出」：把本機 staffDraft 疊加在 Firestore 目前已同步的資料上，
 // 讓畫面看到的是「已送出 + 尚未送出但已經在本機暫存」的合併結果，送出前後的
@@ -2104,11 +2108,12 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
   // 退訂了幾個人、其中已經完成處理（🔔通知那邊/下面勾選框打勾）的有幾個。
   const cancelChoices=choiceList.filter(c=>c.status==='cancel');
   const processedCancelChoices=cancelChoices.filter(c=>c.processed);
-  const baseOrdered=counts.ordered+counts.cancel;
+  const baseOrdered=counts.meat+counts.veg+counts.cancel;
   const statLineHtml = `
     <div class="meal-stat-line">
       <span>原本訂餐 <b>${baseOrdered}</b> 人</span>
       <span>退訂 <b>${counts.cancel}</b> 人</span>
+      <span>加訂 <b>${counts.extra}</b> 人</span>
       <span>已完成 <b>${processedCancelChoices.length}</b> 個</span>
     </div>`;
   // 處理進度勾選：退餐、以後不定 都可以勾選「已完成」（代表已經跟廠商講過
@@ -2137,10 +2142,10 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
   return `
   <div class="meal-card ${meal}${big?' lg':''}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
-    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>）・尚未選擇 <b>${counts.unset}</b> 人</div>
+    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>／加訂 <b>${counts.extra}</b>）・尚未選擇 <b>${counts.unset}</b> 人</div>
     ${statLineHtml}
     ${pendingBarHtml}
-    <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 以後不定 → 未選）</div>
+    <div class="section-label">點座號切換狀態（未選 → 葷 → 素 → 退餐 → 以後不定 → 加訂 → 未選）</div>
     <div class="number-grid">${grid}</div>
     ${unsetSeats.length?`<div class="pending-note" style="margin:0 0 8px;">尚未選擇（${unsetSeats.length}）：${unsetSeats.map(escapeHtml).join('、')}</div>`:''}
     ${recurSeats.length?`<div class="other-label">以後不定（下次建立新的一週時會留白，需重新決定）：${recurSeats.map(escapeHtml).join('、')}</div>`:''}
@@ -2436,7 +2441,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     // 一次 updateDoc，避免每點一下就打一次 Firestore。
     // 循環順序加入「以後這天都不定」（recur），跟同學端的四個選項一致。
     const label=el.dataset.label;
-    const order=['meat','veg','cancel','recur',null];
+    const order=['meat','veg','cancel','recur','extra',null];
     const key=date+'|'+meal+'|'+label;
     const live=choiceMap(date, meal)[label];
     // 固定不定餐虛擬補上的退餐（_virtual）不是真正寫進 Firestore 的紀錄，
