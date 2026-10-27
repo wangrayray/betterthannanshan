@@ -2479,7 +2479,7 @@ function renderStudentEventCard(ev){
     <div class="event-body">
       <div class="section-label">訂購已截止（${fmtDeadline(dl)}），以下是你訂的內容</div>
       ${mineItems.length ? `<div class="outside-list">${rows}</div><div class="outside-total">我的金額 NT$ ${orderTotal(mine, menu)}</div>` : `<div class="other-label">你這次沒有訂購</div>`}
-      ${mineItems.length ? `<div class="outside-total" style="margin-top:6px;">${mine.pickedUp?'✓ 已取餐':'尚未取餐'}</div>` : ''}
+      ${mineItems.length ? `<div class="outside-row ${mine.pickedUp?'picked':''}" style="margin-top:6px;"><label class="paid-check" title="領到餐點後請自己勾選"><input type="checkbox" data-action="toggle-picked" data-event="${ev.id}" data-id="${escapeHtml(studentId)}" ${mine.pickedUp?'checked':''}><span class="check-lab" style="font-size:13px;">我已取餐</span></label></div>` : ''}
     </div>
   </div>`;
   }
