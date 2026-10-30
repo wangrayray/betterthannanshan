@@ -319,7 +319,7 @@
   .deadline-row input[type=datetime-local]{font-family:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px;background:var(--paper);color:var(--ink);}
   .deadline-tag{font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px;background:var(--paid-bg);color:var(--mine);}
   .deadline-tag.closed{background:var(--danger-bg);color:var(--danger);}
-  .vendor-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 14px 4px;}
+  .vendor-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px 4px;}
   .vendor-btn{font-family:inherit;font-size:13px;font-weight:700;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);border-radius:20px;padding:5px 12px;cursor:pointer;}
   .vendor-btn.active{background:var(--outside);color:#fff;border-color:var(--outside);}
   .paid-tag{color:var(--mine);font-weight:700;}
@@ -872,7 +872,8 @@ let gmapSelectedPlace = null; // 目前在地圖上選取、還沒送出的餐�
 let gmapModalEventId = null;  // 目前地圖視窗是為了哪個外食活動打開的
 let gmapLibLoaded = false;
 let settings = { rosterSize:49, includeTeacher:true };
-// 伙委訂餐頁「本週訂了哪家」：週一日期 -> 店家名稱，存在 settings/weekVendors 的 vendors 欄位。
+// 伙委訂餐頁「本週訂了哪家」：週一日期 -> {lunch:店家, dinner:店家}，午餐與晚餐各自選擇，
+// 存在 settings/weekVendors 的 vendors 欄位。舊版只存一個字串（午晚餐共用），讀取時當作兩餐都是那家。
 const WEEK_VENDORS = ['天仁','士福','寬大','久翔','統鮮'];
 let weekVendors = {};
 let studentsRoster = {}; // studentId -> {name}
@@ -1619,9 +1620,19 @@ async function setEventDeadline(eventId, ms){
   await updateDoc(doc(db,'events',eventId), {deadline: ms===null ? deleteField() : ms, lastEditBy:identity(), lastEditAt:new Date().toISOString()});
   showToast(ms===null ? '已取消訂購截止時間' : '已設定訂購截止：'+fmtDeadline(ms));
 }
-async function setWeekVendor(wk, vendor){
-  const same = weekVendors[wk]===vendor;
-  await setDoc(doc(db,'settings','weekVendors'), {vendors:{[wk]: same ? deleteField() : vendor}}, {merge:true});
+function weekVendorOf(wk, meal){
+  const v=weekVendors[wk];
+  if(typeof v==='string') return v;
+  return (v && v[meal]) || null;
+}
+async function setWeekVendor(wk, meal, vendor){
+  const same = weekVendorOf(wk, meal)===vendor;
+  const other = meal==='lunch' ? 'dinner' : 'lunch';
+  const payload = {};
+  // 舊版單一字串：改其中一餐時，另一餐要保留原本那家。
+  if(typeof weekVendors[wk]==='string') payload[other]=weekVendors[wk];
+  payload[meal] = same ? deleteField() : vendor;
+  await setDoc(doc(db,'settings','weekVendors'), {vendors:{[wk]: payload}}, {merge:true});
 }
 // 截止時間一到，畫面要自動切換成截止後的樣子（不用等重新整理）。
 let lastClosedSig='';
@@ -2111,8 +2122,8 @@ function renderMealTab(){
     </div>` : ''}
   </div>`;
 
-  const vendorHtml = role==='staff' ? `
-  <div class="vendor-bar"><span class="section-label" style="margin:0;">本週訂餐店家</span>${WEEK_VENDORS.map(v=>`<button type="button" class="vendor-btn ${weekVendors[wk]===v?'active':''}" data-action="set-week-vendor" data-week="${wk}" data-vendor="${v}">${v}</button>`).join('')}</div>` : '';
+  const vendorHtml = role==='staff' ? ['lunch','dinner'].map(m=>`
+  <div class="vendor-bar"><span class="section-label" style="margin:0;">本週${MEAL_LABEL[m]}店家</span>${WEEK_VENDORS.map(v=>`<button type="button" class="vendor-btn ${weekVendorOf(wk,m)===v?'active':''}" data-action="set-week-vendor" data-week="${wk}" data-meal="${m}" data-vendor="${v}">${v}</button>`).join('')}</div>`).join('') : '';
   let html = addBarHtml + noteHtml + `<div class="week-title-bar">${pickerHtml}${weekCollapseBtn}${weekDeleteBtn}</div>` + vendorHtml;
   html += '<div class="week-group" data-week="'+wk+'">';
   ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
@@ -2686,7 +2697,7 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   }
   else if(action==='set-week-vendor'){
     if(role!=='staff') return;
-    await setWeekVendor(el.dataset.week, el.dataset.vendor);
+    await setWeekVendor(el.dataset.week, el.dataset.meal, el.dataset.vendor);
   }
   else if(action==='add-event-name'){
     const input=document.querySelector(`input[data-action="event-name-input"][data-event="${eventId}"]`);
