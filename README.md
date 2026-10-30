@@ -14,7 +14,7 @@ Firestore + Authentication** 的版本，可以直接放上 GitHub Pages。
 
 ```
 settings/config              全班共用設定（座號數、是否含「師」）
-settings/weekVendors        伙委訂餐頁「本週訂了哪家」：vendors.{週一日期} = 天仁／士福／寬大／久翔／統鮮
+settings/weekVendors        伙委訂餐頁「本週訂了哪家」：vendors.{週一日期}.{lunch|dinner} = 天仁／士福／寬大／久翔／統鮮
 students/{seatNo}            全班座號名冊（伙委在設定頁存檔時自動同步）
 staff/{email}                伙委名單，文件 id = 該伙委的登入 email
 eventCoordinators/{seatNo}   外食訂購人名單，效期 14 天，過期自動失效
@@ -177,8 +177,8 @@ collection 建立 `onSnapshot` 常駐監聽，只要任何一個人寫入一筆�
 
 ### 每週訂餐店家（桶餐訂餐頁）
 
-伙委在一般訂餐畫面（不是外食）週次列下方，可為該週選擇「天仁／士福／寬大／久翔／統鮮」其中一家，
-再點一次同一家可取消。存在 `settings/weekVendors`，不需要額外規則。
+伙委在一般訂餐畫面（不是外食）週次列下方，午餐與晚餐各有一排按鈕，可分別為該週選擇
+「天仁／士福／寬大／久翔／統鮮」其中一家，再點一次同一家可取消。存在 `settings/weekVendors`，不需要額外規則。
 
 ## 角色權限（Firestore Rules 強制）
 
