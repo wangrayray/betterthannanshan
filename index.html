@@ -574,6 +574,21 @@
   .brush-bar button.active{background:var(--ink-solid);border-color:var(--ink-solid);color:var(--on-solid);}
   .week-foot{display:flex;justify-content:center;margin:8px 0 24px;}
   @media (max-width:700px){ .toast{bottom:calc(84px + env(safe-area-inset-bottom));} }
+
+  /* ================= 外食菜單照片 ================= */
+  .menu-edit-list{display:flex;flex-direction:column;background:var(--paper);border-radius:12px;margin-bottom:10px;}
+  .menu-edit-row{display:flex;align-items:center;gap:12px;padding:8px 10px;}
+  .menu-edit-row + .menu-edit-row{border-top:1px solid var(--line);}
+  .menu-thumb{width:56px;height:56px;flex-shrink:0;border-radius:10px;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;background:var(--paper-soft);font-size:12px;color:var(--ink-soft);}
+  .menu-thumb.empty{border:1px dashed var(--line-strong);}
+  .menu-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .menu-edit-name{flex:1;min-width:0;font-size:16px;}
+  .menu-edit-name small{display:block;font-size:14px;color:var(--ink-soft);}
+  .menu-photo-pick{display:inline-flex;align-items:center;cursor:pointer;white-space:nowrap;border-radius:10px;background:var(--paper-soft);color:var(--ink);font-size:14px;padding:8px 14px;}
+  .menu-thumb-sm{width:52px;height:52px;flex-shrink:0;border-radius:10px;object-fit:cover;cursor:zoom-in;margin-right:4px;}
+  .photo-view{margin:auto;max-width:min(92vw,640px);text-align:center;}
+  .photo-view img{max-width:100%;max-height:78vh;border-radius:14px;display:block;margin:0 auto;}
+  .photo-view figcaption{color:#fff;font-size:16px;margin-top:10px;}
 </style>
 </head>
 <body>
@@ -613,6 +628,10 @@
     <div id="gmap-selected-info"></div>
     <button type="button" class="btn btn-primary" id="gmap-confirm-btn" disabled>推薦這個地點</button>
   </div>
+</div>
+
+<div class="modal-bg" id="photo-view-bg">
+  <figure class="photo-view"><img id="photo-view-img" alt=""><figcaption id="photo-view-cap"></figcaption></figure>
 </div>
 
 <div class="modal-bg" id="notif-bg">
@@ -1822,10 +1841,39 @@ setInterval(()=>{
 async function touchEvent(eventId){
   await setDoc(doc(db,'events',eventId), {lastEditBy:identity(), lastEditAt:new Date().toISOString()}, {merge:true});
 }
+// 外食菜單照片：免費方案的 Firebase 不能開 Storage，所以在瀏覽器裡先把照片縮到長邊 640px、
+// 轉成 JPEG（大約 100KB 以內），以 data URL 字串直接存在 menu 文件的 photo 欄位。
+// menu 是一次性讀取（fetchEventMenu），照片只會增加讀取的資料量，不會增加讀取次數。
+const MENU_PHOTO_MAX_SIDE = 640;
+const MENU_PHOTO_MAX_CHARS = 140000;
+let newMenuPhoto = {}; // eventId -> 新增品項時先選好、還沒建立的照片
+async function compressMenuPhoto(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('讀不到這張圖片')); i.src=url; });
+    const scale=Math.min(1, MENU_PHOTO_MAX_SIDE/Math.max(img.naturalWidth,img.naturalHeight));
+    const c=document.createElement('canvas');
+    c.width=Math.round(img.naturalWidth*scale); c.height=Math.round(img.naturalHeight*scale);
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(img,0,0,c.width,c.height);
+    let q=0.75, data=c.toDataURL('image/jpeg',q);
+    while(data.length>MENU_PHOTO_MAX_CHARS && q>0.35){ q-=0.1; data=c.toDataURL('image/jpeg',q); }
+    if(data.length>MENU_PHOTO_MAX_CHARS) throw new Error('照片太大，請換一張');
+    return data;
+  } finally { URL.revokeObjectURL(url); }
+}
+function menuPhotoSrc(mi){ return (mi && typeof mi.photo==='string' && mi.photo.startsWith('data:image/')) ? mi.photo : ''; }
+async function setMenuItemPhoto(eventId, itemId, photo){
+  await updateDoc(doc(db,'events',eventId,'menu',itemId), {photo});
+  await touchEvent(eventId);
+  await fetchEventMenu();
+}
 async function addMenuItem(eventId, name, price){
   if(!name) return;
   const id=uid();
-  await setDoc(doc(db,'events',eventId,'menu',id), {name, price:Number(price)||0, eventId});
+  const data={name, price:Number(price)||0, eventId};
+  if(newMenuPhoto[eventId]) data.photo=newMenuPhoto[eventId];
+  await setDoc(doc(db,'events',eventId,'menu',id), data);
+  delete newMenuPhoto[eventId];
   await touchEvent(eventId);
   // menu 是一次性讀取（見 fetchEventMenu 的說明），單靠 touchEvent 觸發的
   // events 監聽並不會重新抓 eventMenu 本身，所以寫入成功後要手動再讀一次，
@@ -1945,6 +1993,7 @@ function renderOrderStepperRows(eventId, label, menu){
     const totalQty=menuItemOrderedQty(eventId, mi.id);
     return `
     <div class="outside-row">
+      ${menuPhotoSrc(mi)?`<img class="menu-thumb-sm" src="${escapeHtml(menuPhotoSrc(mi))}" alt="${escapeHtml(mi.name)}" data-action="view-menu-photo" data-event="${eventId}" data-item="${mi.id}">`:''}
       <span class="menu-item-name"><b>${escapeHtml(mi.name)}</b><span>NT$${mi.price}・已訂 ${totalQty} 份</span></span>
       <div class="qty-stepper">
         <button type="button" class="qty-step-btn" data-action="order-qty-step" data-event="${eventId}" data-label="${label}" data-item="${mi.id}" data-delta="-1" ${qty<=0?'disabled':''} aria-label="減少${escapeHtml(mi.name)}數量">－</button>
@@ -2604,7 +2653,13 @@ function renderStaffEventCard(ev){
   const unpaidCount = orders.length - paidCount;
   const paidTotal = paidOrders.reduce((s,o)=>s+orderTotal(o, menu),0);
 
-  const menuChips = menu.map(mi=>`<span class="name-chip">${escapeHtml(mi.name)} · NT$${mi.price} · 共${menuItemOrderedQty(ev.id,mi.id)}份<button data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}">×</button></span>`).join('');
+  const menuChips = menu.length ? `<div class="menu-edit-list">${menu.map(mi=>{
+    const src=menuPhotoSrc(mi);
+    return `<div class="menu-edit-row">
+      <label class="menu-thumb ${src?'':'empty'}" title="${src?'點一下更換照片':'加上照片'}">${src?`<img src="${escapeHtml(src)}" alt="">`:'＋照片'}<input type="file" accept="image/*" hidden data-action="menu-photo-input" data-event="${ev.id}" data-item="${mi.id}"></label>
+      <span class="menu-edit-name">${escapeHtml(mi.name)}<small>NT$${mi.price}・已訂 ${menuItemOrderedQty(ev.id,mi.id)} 份</small></span>
+      <button class="outside-remove" data-action="remove-menu-item" data-event="${ev.id}" data-item="${mi.id}" title="刪除品項">×</button>
+    </div>`; }).join('')}</div>` : '';
 
   // 外食訂購人（同學身份、但有管理權限）本人也在座號名冊裡，除了管理活動，
   // 也應該能像其他同學一樣，替自己選品項與數量下單。伙委（role==='staff'）
@@ -2647,10 +2702,11 @@ function renderStaffEventCard(ev){
     <div class="event-body">
       ${deadlineHtml}
       <div class="section-label">菜單</div>
-      <div class="chips">${menuChips || '<span class="other-label">尚未新增選項，請先在下方新增</span>'}</div>
+      ${menuChips || '<div class="other-label">尚未新增選項，請先在下方新增</div>'}
       <div class="add-name-row">
         <input type="text" placeholder="品項名稱" data-role="menu-name" data-event="${ev.id}" style="flex:2;">
         <input type="number" min="0" placeholder="金額" data-role="menu-price" data-event="${ev.id}" style="flex:1;">
+        <label class="menu-photo-pick" data-event="${ev.id}">${newMenuPhoto[ev.id]?'照片 ✓':'照片'}<input type="file" accept="image/*" hidden data-action="new-menu-photo" data-event="${ev.id}"></label>
         <button data-action="add-menu-item" data-event="${ev.id}">新增選項</button>
       </div>
 
@@ -2692,7 +2748,7 @@ function renderStudentEventCard(ev){
   if(closed){
     // 截止後一般同學只看得到「自己訂了什麼」與「是否取餐」，不能再修改。
     const mineItems = menu.filter(mi=>(mine.items&&mine.items[mi.id])>0);
-    const rows = mineItems.map(mi=>`<div class="outside-row"><span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)} × ${mine.items[mi.id]}</span><span class="outside-currency">NT$${mi.price*mine.items[mi.id]}</span></div>`).join('');
+    const rows = mineItems.map(mi=>`<div class="outside-row">${menuPhotoSrc(mi)?`<img class="menu-thumb-sm" src="${escapeHtml(menuPhotoSrc(mi))}" alt="" data-action="view-menu-photo" data-event="${ev.id}" data-item="${mi.id}">`:''}<span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)} × ${mine.items[mi.id]}</span><span class="outside-currency">NT$${mi.price*mine.items[mi.id]}</span></div>`).join('');
     return `
   <div class="event-card">
     ${head}
@@ -2860,6 +2916,13 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     if(!name){ showToast('請輸入品項名稱'); return; }
     await addMenuItem(eventId, name, price);
   }
+  else if(action==='view-menu-photo'){
+    const mi=(eventMenu[eventId]||[]).find(m=>m.id===el.dataset.item);
+    const src=menuPhotoSrc(mi); if(!src) return;
+    document.getElementById('photo-view-img').src=src;
+    document.getElementById('photo-view-cap').textContent=mi.name+'・NT$'+mi.price;
+    document.getElementById('photo-view-bg').classList.add('show');
+  }
   else if(action==='remove-menu-item'){ await removeMenuItem(eventId, el.dataset.item); }
   else if(action==='remove-participant'){ await removeParticipant(eventId, el.dataset.id); }
   else if(action==='order-qty-step'){
@@ -2965,6 +3028,25 @@ document.getElementById('content').addEventListener('keydown', async (ev)=>{
 });
 
 document.getElementById('content').addEventListener('change', async (ev)=>{
+  const act=ev.target.dataset.action;
+  if(act==='menu-photo-input' || act==='new-menu-photo'){
+    const file=ev.target.files && ev.target.files[0]; ev.target.value='';
+    if(!file) return;
+    try{
+      showToast('照片處理中…');
+      const data=await compressMenuPhoto(file);
+      if(act==='new-menu-photo'){
+        // 不重繪整個畫面，避免已經打好的品項名稱、金額被清掉；只更新按鈕上的勾勾。
+        newMenuPhoto[ev.target.dataset.event]=data;
+        const lab=ev.target.closest('.menu-photo-pick'); if(lab) lab.firstChild.textContent='照片 ✓';
+        showToast('已選好照片，按「新增選項」一起建立');
+      } else {
+        await setMenuItemPhoto(ev.target.dataset.event, ev.target.dataset.item, data);
+        showToast('已更新照片');
+      }
+    }catch(err){ showToast(err.message||'照片上傳失敗'); }
+    return;
+  }
   try{
   if(ev.target.dataset.action==='date-note'){
     const date=ev.target.dataset.date;
@@ -3222,6 +3304,7 @@ function syncThemeUI(theme){
   if(meta){ meta.setAttribute('content', THEME_COLOR[theme] || THEME_COLOR.light); }
 }
 syncThemeUI(document.documentElement.getAttribute('data-theme') || 'light');
+document.getElementById('photo-view-bg').addEventListener('click', ()=>document.getElementById('photo-view-bg').classList.remove('show'));
 document.getElementById('content').addEventListener('toggle', (ev)=>{
   const d=ev.target; if(d.classList && d.classList.contains('add-fold')) addFormOpen[d.dataset.fold]=d.open;
 }, true);
