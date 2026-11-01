@@ -31,17 +31,17 @@
 <style>
   /* 版面方向：參考 foodpanda、LINE、iOS 內建 app 這類每天在用的手機介面——
      灰底白卡、系統字，手機上分頁放在底部、送出鈕固定在畫面下緣。
-     配色只有黑、白、灰，加上一個紅色：紅色只留給「退餐」、通知數字和刪除這類要注意的東西。
-     狀態靠深淺和外框區分：葷＝黑底、素＝灰底、加訂＝粗黑框、不定＝虛線、退餐＝紅字刪除線。 */
+     配色只有白、灰（最深用炭灰，不用純黑），加上一個紅色：紅色只留給「退餐」、通知數字和刪除這類要注意的東西。
+     狀態靠深淺和外框區分：葷＝深灰底、素＝淺灰底、加訂＝粗框、不定＝虛線、退餐＝紅字刪除線。 */
   :root{
     color-scheme:light;
     --bg:#F2F2F5; --paper:#FFFFFF; --paper-soft:#F2F2F5;
-    --ink:#1C1C1E; --ink-soft:#86868B; --ink-solid:#1C1C1E; --on-solid:#FFFFFF; --on-color:#FFFFFF; --line:#E6E6EA; --line-strong:#D2D2D7;
-    --brand:#1C1C1E; --brand-bg:#F2F2F5;
-    --lunch:#1C1C1E; --lunch-bg:#FFFFFF;
-    --dinner:#1C1C1E; --dinner-bg:#FFFFFF;
+    --ink:#2C2C30; --ink-soft:#86868B; --ink-solid:#4A4A50; --on-solid:#FFFFFF; --on-color:#FFFFFF; --line:#E6E6EA; --line-strong:#D2D2D7;
+    --brand:#4A4A50; --brand-bg:#F2F2F5;
+    --lunch:#2C2C30; --lunch-bg:#FFFFFF;
+    --dinner:#2C2C30; --dinner-bg:#FFFFFF;
     --danger:#D93025; --danger-bg:#FCE9E7;
-    --mine:#8E8E93; --outside:#1C1C1E; --outside-bg:#F2F2F5; --paid-bg:#F2F2F5;
+    --mine:#C4C4C9; --outside:#4A4A50; --outside-bg:#F2F2F5; --paid-bg:#F2F2F5;
     --radius:14px; --shadow:none;
     --font-sans:-apple-system,BlinkMacSystemFont,'PingFang TC','Noto Sans TC','Microsoft JhengHei',sans-serif;
     --font-head:var(--font-sans);
@@ -51,12 +51,12 @@
   html[data-theme="dark"]{
     color-scheme:dark;
     --bg:#000000; --paper:#1C1C1E; --paper-soft:#2C2C2E;
-    --ink:#F2F2F7; --ink-soft:#98989F; --ink-solid:#F2F2F7; --on-solid:#1C1C1E; --on-color:#FFFFFF; --line:#2F2F33; --line-strong:#48484D;
-    --brand:#F2F2F7; --brand-bg:#2C2C2E;
+    --ink:#E5E5EA; --ink-soft:#98989F; --ink-solid:#C7C7CC; --on-solid:#1C1C1E; --on-color:#FFFFFF; --line:#2F2F33; --line-strong:#48484D;
+    --brand:#C7C7CC; --brand-bg:#2C2C2E;
     --lunch:#F2F2F7; --lunch-bg:#1C1C1E;
     --dinner:#F2F2F7; --dinner-bg:#1C1C1E;
     --danger:#FF5A4E; --danger-bg:#3B1C1A;
-    --mine:#636366; --outside:#F2F2F7; --outside-bg:#2C2C2E; --paid-bg:#2C2C2E;
+    --mine:#5A5A5F; --outside:#C7C7CC; --outside-bg:#2C2C2E; --paid-bg:#2C2C2E;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -256,7 +256,7 @@
   .number-cell.outside-cell.active{background:var(--outside);color:var(--on-color);border-color:var(--outside);}
   .number-cell.unset{background:var(--paper);color:var(--ink-soft);border-color:var(--line-strong);}
   .number-cell.meat{background:var(--ink-solid);color:var(--on-solid);}
-  .number-cell.veg{background:var(--mine);color:var(--on-color);}
+  .number-cell.veg{background:var(--mine);color:var(--ink);}
   .number-cell.cancel{background:var(--danger-bg);color:var(--danger);border-color:var(--danger);text-decoration:line-through;}
   .number-cell.recur{background:var(--paper);color:var(--ink-soft);border:1px dashed var(--ink-soft);}
   .number-cell.extra{background:var(--paper);color:var(--ink);border:2px solid var(--ink);}
@@ -285,7 +285,7 @@
   .choice-btn{border:1px solid var(--line-strong);border-radius:6px;padding:12px 8px;font-size:14.5px;font-weight:600;background:var(--paper);color:var(--ink);cursor:pointer;text-align:center;}
   .choice-btn:hover{background:var(--paper-soft);}
   .choice-btn.active.meat{background:var(--ink-solid);color:var(--on-solid);border-color:var(--ink-solid);}
-  .choice-btn.active.veg{background:var(--mine);color:var(--on-color);border-color:var(--mine);}
+  .choice-btn.active.veg{background:var(--mine);color:var(--ink);border-color:var(--mine);}
   .choice-btn.active.cancel{background:var(--danger);color:var(--on-color);border-color:var(--danger);}
   .choice-btn.active.recur{background:var(--paper);color:var(--ink);border:1.5px dashed var(--ink);}
   .choice-btn.recur{font-size:13px;}
@@ -505,7 +505,7 @@
   .seg{flex:1;display:grid;grid-template-columns:repeat(4,1fr);background:var(--paper-soft);border-radius:10px;padding:3px;gap:3px;}
   .seg button{border:none;background:none;border-radius:8px;padding:9px 0;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;}
   .seg button.active.meat{background:var(--ink-solid);color:var(--on-solid);}
-  .seg button.active.veg{background:var(--mine);color:#fff;}
+  .seg button.active.veg{background:var(--mine);color:var(--ink);}
   .seg button.active.cancel{background:var(--danger);color:#fff;}
   .seg button.active.recur{background:var(--paper);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--ink);}
   .meal-row-note{font-size:12px;color:var(--ink-soft);padding:0 0 8px 56px;margin-top:-4px;}
