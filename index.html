@@ -559,6 +559,21 @@
   .date-body,.date-body.single-meal{grid-template-columns:minmax(0,1fr);}
   @media (min-width:641px){ .date-body:not(.single-meal){grid-template-columns:minmax(0,1fr) minmax(0,1fr);} }
   .copy-last-btn{white-space:nowrap;}
+
+  /* ================= 介面邏輯調整用的元件 ================= */
+  .add-fold{margin-bottom:14px;}
+  .add-fold > summary{list-style:none;display:inline-flex;align-items:center;cursor:pointer;font-size:14px;color:var(--ink);background:var(--paper);border-radius:999px;padding:7px 14px;box-shadow:var(--shadow);}
+  .add-fold > summary::-webkit-details-marker{display:none;}
+  .add-fold[open] > summary{margin-bottom:10px;background:var(--ink-solid);color:var(--on-solid);}
+  .meal-total{display:flex;align-items:baseline;gap:6px;margin:2px 0 6px;flex-wrap:wrap;}
+  .meal-total-num{font-family:var(--font-title);font-size:40px;line-height:1;color:var(--ink);}
+  .meal-total-unit{font-size:16px;color:var(--ink);}
+  .meal-total-detail{font-size:14px;color:var(--ink-soft);margin-left:6px;}
+  .brush-bar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
+  .brush-bar button{flex-shrink:0;border:1px solid var(--line-strong);background:var(--paper);color:var(--ink);border-radius:999px;padding:5px 12px;font-size:14px;cursor:pointer;}
+  .brush-bar button.active{background:var(--ink-solid);border-color:var(--ink-solid);color:var(--on-solid);}
+  .week-foot{display:flex;justify-content:center;margin:8px 0 24px;}
+  @media (max-width:700px){ .toast{bottom:calc(84px + env(safe-area-inset-bottom));} }
 </style>
 </head>
 <body>
@@ -1055,6 +1070,10 @@ let archiveSubmenuOpen = false; // 選週面板裡「封存／歷史週次」子
 // 的狀態，送出時如果 baseline 跟 Firestore 目前最新值不一致（代表送出前被別
 // 人改過），就跳過那一筆、提示衝突，不會覆蓋掉別人剛送出的資料。
 let staffDraft = {};
+// 伙委點座號格的「筆刷」：'cycle' 是原本的循環切換；選了某個狀態後，點座號就直接設成那個狀態（null＝清除）。
+let staffBrush = 'cycle';
+// 「新增日期」「新增外食活動」表單平常收起來，記住是否展開，避免資料一更新重繪就被收回去。
+let addFormOpen = {meal:false, event:false};
 let role = '';          // 'staff' | 'student' | ''
 let staffName = '';
 let studentId = '';
@@ -1714,9 +1733,6 @@ function mergedStaffChoiceArr(date, meal){
   });
   return Object.values(map);
 }
-function pendingCountForMeal(date, meal){
-  return Object.keys(staffDraft).filter(k=>staffDraft[k].date===date && staffDraft[k].meal===meal).length;
-}
 // 把「這一天、這一餐」所有暫存的異動一次送出。送出前逐筆比對 baseline
 // （開始編輯當下看到的狀態）跟 Firestore 目前最新值：如果不一致，代表這段
 // 時間被別人改過了，就跳過那一筆（不覆蓋），其餘沒有衝突的照樣一次
@@ -2221,12 +2237,13 @@ function renderMealTab(){
   let addBarHtml='';
   if(role==='staff'){
     addBarHtml = `
+    <details class="add-fold" data-fold="meal" ${addFormOpen.meal?'open':''}><summary>＋ 新增日期</summary>
     <div class="add-bar">
       <label for="date-input">選擇日期</label>
       <input type="date" id="date-input" value="${todayStr()}">
-      <button class="btn btn-ghost" id="add-date-btn">＋新增單日</button>
-      <button class="btn btn-primary" id="add-week-btn">＋新增整週（一～五，自動延續上週）</button>
-    </div>`;
+      <button class="btn btn-ghost" id="add-date-btn">新增單日</button>
+      <button class="btn btn-primary" id="add-week-btn">新增整週（一～五，延續上週）</button>
+    </div></details>`;
     // 伙委畫面一次只顯示一餐，按鈕可以放大、比較不會誤觸；這裡切換要看
     // 的是哪一餐，預設依登入時的餐別標籤決定，之後隨時可以自行切換。
     addBarHtml += `
@@ -2255,6 +2272,10 @@ function renderMealTab(){
   }
   const wk = selectedWeekKey;
   const ds = weeks[wk].sort((a,b)=>a.localeCompare(b));
+  // 已經過去的日子預設收合，打開頁面先看到今天和之後；只在第一次看到那天時套用，
+  // 之後使用者自己展開或收合就照使用者的。
+  const today = todayStr();
+  ds.forEach(d=>{ if(d<today && !defaultedCollapseDates.has(d)){ defaultedCollapseDates.add(d); collapsedDates.add(d); } });
 
   const weekDeleteBtn = role==='staff' ? `<button class="week-delete-btn" data-action="delete-week" data-week="${wk}">刪除整週</button>` : '';
   const allCollapsed = ds.every(d=>collapsedDates.has(d));
@@ -2285,22 +2306,23 @@ function renderMealTab(){
 
   const vendorHtml = role==='staff' ? ['lunch','dinner'].map(m=>`
   <div class="vendor-bar"><span class="section-label" style="margin:0;">${MEAL_LABEL[m]}店家</span>${WEEK_VENDORS.map(v=>`<button type="button" class="vendor-btn ${weekVendorOf(wk,m)===v?'active':''}" data-action="set-week-vendor" data-week="${wk}" data-meal="${m}" data-vendor="${v}">${v}</button>`).join('')}</div>`).join('') : '';
-  let html = addBarHtml + noteHtml + `<div class="week-title-bar">${pickerHtml}${weekCollapseBtn}${weekDeleteBtn}</div>` + vendorHtml;
+  let html = addBarHtml + noteHtml + `<div class="week-title-bar">${pickerHtml}${weekCollapseBtn}</div>` + vendorHtml;
   html += '<div class="week-group" data-week="'+wk+'">';
   ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
   html += '</div>';
-  if(role==='student') html += renderSubmitDock();
+  if(weekDeleteBtn) html += `<div class="week-foot">${weekDeleteBtn}</div>`;
+  html += role==='student' ? renderSubmitDock() : renderStaffSubmitDock();
   content.innerHTML = html;
 }
 
 function renderStaffDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
   const lC=mergedStaffChoiceArr(date,'lunch'), dC=mergedStaffChoiceArr(date,'dinner');
-  const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
   // 一次只顯示目前檢視的那一餐（見上方午餐/晚餐訂餐畫面切換鈕），卡片全寬
   // 顯示，配合 renderStaffMealCard 的 big=true 放大按鈕與座號格，比較不會
-  // 誤觸；上面的兩個 chip 仍然同時顯示兩餐概況，方便瞄一眼另一餐的狀態。
+  // 誤觸。卡片收合時標題列只摘要這一餐，展開後的詳細數字在卡片裡面。
   const showLunch = mealViewFilter!=='dinner';
+  const headRight = collapsed ? `<span class="chip-summary">${showLunch?'午':'晚'} ${mealSummaryText(showLunch?lC:dC)}</span>` : '';
   const mealCardHtml = showLunch
     ? renderStaffMealCard(date,'lunch','午餐',e.lunch||{},lC,true)
     : renderStaffMealCard(date,'dinner','晚餐',e.dinner||{},dC,true);
@@ -2327,13 +2349,6 @@ function renderStaffDateCard(date){
 function renderStaffMealCard(date, meal, label, m, choiceList, big){
   const roster=rosterLabels();
   const counts=mealCounts(choiceList);
-  const pending = pendingCountForMeal(date, meal);
-  const pendingBarHtml = pending ? `
-    <div class="pending-bar">
-      <b>${pending} 筆${label}異動尚未送出</b>
-      <button type="button" class="btn btn-primary" data-action="submit-meal-changes" data-date="${date}" data-meal="${meal}">送出${label}異動</button>
-      <button type="button" class="btn btn-ghost" data-action="discard-meal-changes" data-date="${date}" data-meal="${meal}">捨棄</button>
-    </div>` : '';
   const grid=roster.map(lab=>{
     const c=choiceList.find(x=>x.id===lab);
     const status=c?c.status:'unset';
@@ -2350,13 +2365,17 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
   const cancelChoices=choiceList.filter(c=>c.status==='cancel');
   const processedCancelChoices=cancelChoices.filter(c=>c.processed);
   const baseOrdered=counts.meat+counts.veg+counts.cancel;
+  // 最上面的大數字是「要跟廠商訂幾份」（葷＋素＋加訂），下面一行是原本的三個統計。
   const statLineHtml = `
+    <div class="meal-total"><span class="meal-total-num">${counts.ordered}</span><span class="meal-total-unit">份</span>
+      <span class="meal-total-detail">葷 ${counts.meat}・素 ${counts.veg}${counts.extra?'・加訂 '+counts.extra:''}</span></div>
     <div class="meal-stat-line">
-      <span>原本訂餐 <b>${baseOrdered}</b> 人</span>
-      <span>退訂 <b>${counts.cancel}</b> 人</span>
-      <span>加訂 <b>${counts.extra}</b> 人</span>
-      <span>已完成 <b>${processedCancelChoices.length}</b> 個</span>
+      <span>原本訂餐 <b>${baseOrdered}</b></span>
+      <span>退訂 <b>${counts.cancel}</b>（已完成 ${processedCancelChoices.length}）</span>
+      <span>未選 <b>${counts.unset}</b></span>
     </div>`;
+  const BRUSHES=[['cycle','循環'],['meat','葷'],['veg','素'],['cancel','退'],['recur','不定'],['extra','加訂'],['clear','清除']];
+  const brushHtml = `<div class="brush-bar" role="radiogroup" aria-label="點座號時要設定的狀態">${BRUSHES.map(([k,t])=>`<button type="button" class="${staffBrush===k?'active':''}" data-action="set-brush" data-brush="${k}">${t}</button>`).join('')}</div>`;
   // 處理進度勾選：退餐、以後不定 都可以勾選「已完成」（代表已經跟廠商講過
   // / 已經跟對方確認過了），所有伙委共用同一份資料。特意放在卡片最下面
   // （訂餐頁面下方），跟上面選擇狀態的座號格分開，並且完全綁在這一餐
@@ -2383,10 +2402,9 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
   return `
   <div class="meal-card ${meal}${big?' lg':''}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
-    <div class="meal-summary">共訂 <b>${counts.ordered}</b> 人（葷 <b>${counts.meat}</b>／素 <b>${counts.veg}</b>／加訂 <b>${counts.extra}</b>）・尚未選擇 <b>${counts.unset}</b> 人</div>
     ${statLineHtml}
-    ${pendingBarHtml}
-    <div class="section-label">點座號切換：未選 → 葷 → 素 → 退 → 不定 → 加訂</div>
+    <div class="section-label">${staffBrush==='cycle'?'點座號切換：未選 → 葷 → 素 → 退 → 不定 → 加訂':'點座號直接設成「'+(staffBrush==='clear'?'未選':STATUS_LABEL[staffBrush])+'」'}</div>
+    ${brushHtml}
     <div class="number-grid">${grid}</div>
     ${unsetSeats.length?`<div class="pending-note" style="margin:0 0 8px;">尚未選擇（${unsetSeats.length}）：${unsetSeats.map(escapeHtml).join('、')}</div>`:''}
     ${recurSeats.length?`<div class="other-label">以後不定（下次建立新的一週時會留白，需重新決定）：${recurSeats.map(escapeHtml).join('、')}</div>`:''}
@@ -2465,6 +2483,12 @@ function renderSubmitDock(){
   if(!n) return '';
   return `<div class="submit-dock"><span class="dock-text">${n} 項變更尚未送出</span><button type="button" class="dock-undo" data-action="discard-all-choices">復原</button><button type="button" class="dock-go" data-action="submit-all-choices">送出</button></div>`;
 }
+// 伙委代填的異動也一樣集中到畫面下方一次送出，不用每一天、每一餐各按一次。
+function renderStaffSubmitDock(){
+  const n=Object.keys(staffDraft).length;
+  if(!n) return '';
+  return `<div class="submit-dock"><span class="dock-text">${n} 筆異動尚未送出</span><button type="button" class="dock-undo" data-action="discard-all-meal-changes">復原</button><button type="button" class="dock-go" data-action="submit-all-meal-changes">送出</button></div>`;
+}
 
 function renderEventTab(){
   const content=document.getElementById('content');
@@ -2475,7 +2499,7 @@ function renderEventTab(){
 
   let addHtml='';
   if(manage){
-    addHtml = `<div class="add-bar"><label for="event-title-input">活動名稱</label><input type="text" id="event-title-input" placeholder="例如：8/10 雞排店合購"><label for="event-deadline-input">訂購截止（可留白）</label><input type="datetime-local" id="event-deadline-input"><button class="btn btn-outside" id="create-event-btn">＋新增外食訂購活動</button></div>`;
+    addHtml = `<details class="add-fold" data-fold="event" ${addFormOpen.event?'open':''}><summary>＋ 新增外食活動</summary><div class="add-bar"><label for="event-title-input">活動名稱</label><input type="text" id="event-title-input" placeholder="例如：8/10 雞排店合購"><label for="event-deadline-input">訂購截止（可留白）</label><input type="datetime-local" id="event-deadline-input"><button class="btn btn-outside" id="create-event-btn">建立活動</button></div></details>`;
   }
   const noteHtml = pendingRosterNote() + coordinatorNote();
 
@@ -2740,9 +2764,9 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
   }
   else if(action==='cycle-status'){
     // 伙委代填改成「本機批次暫存」：點座號只更新本機 staffDraft，不立刻寫入
-    // Firestore，畫面用 mergedStaffChoiceArr() 疊加顯示暫存效果。要等按下這
-    // 一天的「送出這天的異動」才會真的一次寫入，同一份文件的多筆異動合併成
-    // 一次 updateDoc，避免每點一下就打一次 Firestore。
+    // Firestore，畫面用 mergedStaffChoiceArr() 疊加顯示暫存效果。要等按下畫面
+    // 下方送出列的「送出」才會真的寫入，同一天同一餐的多筆異動合併成一次
+    // updateDoc，避免每點一下就打一次 Firestore。
     // 循環順序加入「以後這天都不定」（recur），跟同學端的四個選項一致。
     const label=el.dataset.label;
     const order=['meat','veg','cancel','recur','extra',null];
@@ -2757,8 +2781,8 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     const current = d ? d.next : liveStatus;
     const baseline = d ? d.baseline : liveStatus;
     const basePrevStatus = d ? d.basePrevStatus : livePrevStatus;
-    const idx=order.indexOf(current);
-    const next=order[(idx+1)%order.length];
+    const next = staffBrush==='cycle' ? order[(order.indexOf(current)+1)%order.length]
+               : (staffBrush==='clear' ? null : staffBrush);
     if(next===baseline){ delete staffDraft[key]; }
     else{
       staffDraft[key] = { date, meal, label, baseline, basePrevStatus, next,
@@ -2770,6 +2794,12 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     ev.stopPropagation();
     await submitMealChanges(date, meal);
   }
+  else if(action==='set-brush'){ staffBrush=el.dataset.brush; render(); }
+  else if(action==='submit-all-meal-changes'){
+    const pairs=[...new Set(Object.values(staffDraft).map(d=>d.date+'|'+d.meal))];
+    for(const pr of pairs){ const [d,m]=pr.split('|'); await submitMealChanges(d, m); }
+  }
+  else if(action==='discard-all-meal-changes'){ staffDraft={}; render(); }
   else if(action==='discard-meal-changes'){
     ev.stopPropagation();
     Object.keys(staffDraft).filter(k=>staffDraft[k].date===date && staffDraft[k].meal===meal).forEach(k=>delete staffDraft[k]);
@@ -3192,6 +3222,15 @@ function syncThemeUI(theme){
   if(meta){ meta.setAttribute('content', THEME_COLOR[theme] || THEME_COLOR.light); }
 }
 syncThemeUI(document.documentElement.getAttribute('data-theme') || 'light');
+document.getElementById('content').addEventListener('toggle', (ev)=>{
+  const d=ev.target; if(d.classList && d.classList.contains('add-fold')) addFormOpen[d.dataset.fold]=d.open;
+}, true);
+// 還有沒送出的選擇就要關掉或重新整理頁面時，先跳瀏覽器的確認視窗，避免白選。
+window.addEventListener('beforeunload', (ev)=>{
+  if(Object.keys(draftChoice).length || Object.keys(staffDraft).length || Object.keys(eventOrderDraft).length){
+    ev.preventDefault(); ev.returnValue='';
+  }
+});
 // 右上角頭像：點開帳號選單（身份、新手教學、深淺色、登出），點選單外面或選單裡的按鈕就收起來。
 document.getElementById('me-btn').addEventListener('click', (ev)=>{
   ev.stopPropagation();
@@ -3273,13 +3312,6 @@ document.getElementById('migrate-choices-btn').addEventListener('click', async (
   finally{ btn.disabled=false; btn.textContent=orig; }
 });
 
-// 伙委批次暫存尚未送出時，離開頁面前提醒一下，避免手滑關掉分頁弄丟還沒送出的異動。
-window.addEventListener('beforeunload', (ev)=>{
-  if(Object.keys(staffDraft).length){
-    ev.preventDefault();
-    ev.returnValue = '';
-  }
-});
 </script>
 </body>
 </html>
