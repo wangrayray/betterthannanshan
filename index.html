@@ -18,7 +18,7 @@
 <title>Better than nanshan｜退餐與外食訂購</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Huninn&display=swap" rel="stylesheet">
 <script>
   // Google Maps JavaScript API 官方 bootstrap loader，實際的 maps/places 函式庫
   // 只有在打開「開啟地圖選餐廳」時才會用 google.maps.importLibrary() 動態載入，
@@ -29,13 +29,18 @@
   });
 </script>
 <style>
-  /* 字體排版（參考〈設計師必看的字體與排版應用指南〉）：字級只用 12／14／16／20／24 這幾階，
+  /* 字體：內文用粉圓（Huninn，只有一種粗細，所以關掉瀏覽器的假粗體，層級改靠字級與深淺）；
+     標題「比南山更好」和日期數字用一樹令和（KazukiReiwa）的裁切版，見下方 @font-face。
+     字體排版（參考〈設計師必看的字體與排版應用指南〉）：字級只用 12／14／16／20／24 這幾階，
      層級之間拉開差距；字重只用 400／500／700；中文行高 1.6；文字與底色都避開純黑、純灰，
      加一點點藍色調。
      版面方向：參考 foodpanda、LINE、iOS 內建 app 這類每天在用的手機介面——
      灰底白卡、系統字，手機上分頁放在底部、送出鈕固定在畫面下緣。
      配色只有白、灰（最深用炭灰，不用純黑），加上一個紅色：紅色只留給「退餐」、通知數字和刪除這類要注意的東西。
      狀態靠深淺和外框區分：葷＝深灰底、素＝淺灰底、加訂＝粗框、不定＝虛線、退餐＝紅字刪除線。 */
+  /* 一樹令和 KazukiReiwa（SIL OFL 1.1，© Kazuki Kimura）只裁出標題與日期用到的字。
+     依 OFL 規定，修改過（裁切）的版本不能沿用保留字型名稱，所以改名為 BTNS Title；授權全文見 assets/fonts/OFL-KazukiReiwa.txt。 */
+  @font-face{font-family:'BTNS Title';src:url('assets/fonts/btns-title-bold.woff2') format('woff2');font-weight:400 900;font-display:swap;}
   :root{
     color-scheme:light;
     --bg:#F1F3F6; --paper:#FFFFFF; --paper-soft:#F1F3F6;
@@ -46,8 +51,10 @@
     --danger:#D93025; --danger-bg:#FCE9E7;
     --mine:#C5CAD3; --outside:#474C57; --outside-bg:#F1F3F6; --paid-bg:#F1F3F6;
     --radius:14px; --shadow:none;
-    --font-sans:-apple-system,BlinkMacSystemFont,'PingFang TC','Noto Sans TC','Microsoft JhengHei',sans-serif;
+    --font-sans:'Huninn',-apple-system,BlinkMacSystemFont,'PingFang TC','Noto Sans TC','Microsoft JhengHei',sans-serif;
     --font-head:var(--font-sans);
+    --font-title:'BTNS Title',var(--font-sans);
+    --glass:rgba(255,255,255,.78); --glass-dark:rgba(38,42,51,.9);
     --font-mono:var(--font-sans);
   }
   /* 深色模式：同一組變數換深色。--ink-solid / --on-solid 是實心按鈕的底色與字色，深色下反過來。 */
@@ -60,6 +67,8 @@
     --dinner:#E3E6EC; --dinner-bg:#1D2026;
     --danger:#FF5A4E; --danger-bg:#3B1C1A;
     --mine:#565C68; --outside:#C3C8D1; --outside-bg:#272B33; --paid-bg:#272B33;
+    --glass:rgba(29,32,38,.78); --glass-dark:rgba(60,65,76,.92);
+    --shadow:0 1px 2px rgba(0,0,0,.3);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -529,6 +538,29 @@
   .menu-item-name{display:flex;flex-direction:column;flex:1;min-width:0;}
   .menu-item-name b{font-size:16px;font-weight:500;}
   .menu-item-name span{font-size:14px;color:var(--ink-soft);}
+
+  /* ================= 細節質感 ================= */
+  html{font-synthesis:none;}
+  body{letter-spacing:.03em;}
+  b,strong{color:var(--ink);}
+  :root{--shadow:0 1px 2px rgba(22,28,45,.04),0 8px 24px rgba(22,28,45,.05); --radius:18px;}
+  .header h1{font-family:var(--font-title);font-weight:700;font-size:20px;letter-spacing:.06em;}
+  .date-num{font-family:var(--font-title);font-weight:700;letter-spacing:.02em;}
+  .header{background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom-color:transparent;box-shadow:0 1px 0 var(--line);}
+  @media (max-width:700px){ #tab-bar{background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);} }
+  .date-card,.event-card,.add-bar,.overview{box-shadow:var(--shadow);margin-bottom:16px;}
+  .section-label,.vendor-bar .section-label{letter-spacing:.08em;color:var(--ink-soft);}
+  .seg{padding:4px;border-radius:12px;}
+  .seg button{border-radius:9px;transition:background .15s,color .15s,box-shadow .15s;}
+  .seg button.active.meat,.seg button.active.veg,.seg button.active.cancel{box-shadow:0 1px 2px rgba(0,0,0,.12);}
+  .number-cell{border-radius:10px;}
+  .submit-dock{background:var(--glass-dark);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-radius:18px;}
+  .submit-dock .dock-go{border-radius:12px;}
+  .me-btn{letter-spacing:0;}
+  .today-tag{letter-spacing:.06em;}
+  .date-body,.date-body.single-meal{grid-template-columns:minmax(0,1fr);}
+  @media (min-width:641px){ .date-body:not(.single-meal){grid-template-columns:minmax(0,1fr) minmax(0,1fr);} }
+  .copy-last-btn{white-space:nowrap;}
 </style>
 </head>
 <body>
