@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#F3F0E9" id="theme-color-meta">
+<meta name="theme-color" content="#F2F2F5" id="theme-color-meta">
 <script>
   // 深色模式：在畫面畫出來之前先決定要用淺色還是深色，避免「先閃一下淺色、再跳成深色」。
   // 有存過使用者手動選過的偏好就用那個，沒有的話就跟著系統的淺色／深色設定走。
@@ -18,7 +18,7 @@
 <title>Better than nanshan｜退餐與外食訂購</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script>
   // Google Maps JavaScript API 官方 bootstrap loader，實際的 maps/places 函式庫
   // 只有在打開「開啟地圖選餐廳」時才會用 google.maps.importLibrary() 動態載入，
@@ -29,31 +29,33 @@
   });
 </script>
 <style>
-  /* 版面方向：像一張印出來的訂餐表——米白紙底、黑色墨字、細線分隔、少量圓角，
-     不用陰影和漸層。顏色只拿來表達狀態（葷／素／退餐／加訂…），其餘都是黑白灰。 */
+  /* 版面方向：參考 foodpanda、LINE、iOS 內建 app 這類每天在用的手機介面——
+     灰底白卡、系統字、一個品牌色（便當紅），手機上分頁放在底部、送出鈕固定在畫面下緣。
+     顏色只拿來表達狀態（葷／素／退餐／加訂…）。 */
   :root{
     color-scheme:light;
-    --bg:#F3F0E9; --paper:#FFFEFB; --paper-soft:#F0ECE3;
-    --ink:#1F1D1A; --ink-soft:#6F6A61; --ink-solid:#1F1D1A; --on-solid:#FFFEFB; --on-color:#FFFFFF; --line:#E1DBCF; --line-strong:#C9C1B2;
-    --lunch:#A0561A; --lunch-bg:#FBF4EC;
-    --dinner:#2F3D5C; --dinner-bg:#F1F3F7;
-    --danger:#B3261E; --danger-bg:#FAEAE7;
-    --mine:#2F6A4C; --outside:#C7511F; --outside-bg:#FBEEE6; --paid-bg:#ECF3EE;
-    --radius:8px; --shadow:none;
-    --font-sans:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'PingFang TC','Microsoft JhengHei',sans-serif;
-    --font-head:'Noto Serif TC','Songti TC','PMingLiU',serif;
-    --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    --bg:#F2F2F5; --paper:#FFFFFF; --paper-soft:#F2F2F5;
+    --ink:#1C1C1E; --ink-soft:#86868B; --ink-solid:#1C1C1E; --on-solid:#FFFFFF; --on-color:#FFFFFF; --line:#E6E6EA; --line-strong:#D2D2D7;
+    --brand:#E2492D; --brand-bg:#FDECE8;
+    --lunch:#E2492D; --lunch-bg:#FFFFFF;
+    --dinner:#3D5A99; --dinner-bg:#FFFFFF;
+    --danger:#D93025; --danger-bg:#FCE9E7;
+    --mine:#2E9B57; --outside:#E2492D; --outside-bg:#FDECE8; --paid-bg:#EAF6EE;
+    --radius:14px; --shadow:none;
+    --font-sans:-apple-system,BlinkMacSystemFont,'PingFang TC','Noto Sans TC','Microsoft JhengHei',sans-serif;
+    --font-head:var(--font-sans);
+    --font-mono:var(--font-sans);
   }
-  /* 深色模式：同一組 CSS 變數換一套深色配色。--ink-solid / --on-solid 是「實心按鈕底色」
-     與「按鈕上的字」，深色模式下反過來（淺底深字），所以按鈕文字一律用 --on-solid，不寫死白色。 */
+  /* 深色模式：同一組變數換深色。--ink-solid / --on-solid 是實心按鈕的底色與字色，深色下反過來。 */
   html[data-theme="dark"]{
     color-scheme:dark;
-    --bg:#151412; --paper:#1D1C19; --paper-soft:#26241F;
-    --ink:#ECE7DD; --ink-soft:#A39D91; --ink-solid:#ECE7DD; --on-solid:#1D1C19; --on-color:#15140F; --line:#34312B; --line-strong:#4A463E;
-    --lunch:#D58B4A; --lunch-bg:#2A2119;
-    --dinner:#8EA3CF; --dinner-bg:#1E222B;
-    --danger:#E0645A; --danger-bg:#3A1E1B;
-    --mine:#5FAE85; --outside:#E57A45; --outside-bg:#36241A; --paid-bg:#1E2C24;
+    --bg:#000000; --paper:#1C1C1E; --paper-soft:#2C2C2E;
+    --ink:#F2F2F7; --ink-soft:#98989F; --ink-solid:#F2F2F7; --on-solid:#1C1C1E; --on-color:#FFFFFF; --line:#2F2F33; --line-strong:#48484D;
+    --brand:#FF6A4D; --brand-bg:#3A1F19;
+    --lunch:#FF6A4D; --lunch-bg:#1C1C1E;
+    --dinner:#8FA8E0; --dinner-bg:#1C1C1E;
+    --danger:#FF5A4E; --danger-bg:#3B1C1A;
+    --mine:#3FBF72; --outside:#FF6A4D; --outside-bg:#3A1F19; --paid-bg:#1B3024;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -74,9 +76,6 @@
   .id-bar b{color:var(--ink);font-weight:700;}
   .id-bar button{border:none;background:none;color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-size:12.5px;padding:0;}
   .id-bar button:hover{color:var(--ink);}
-  .bell-btn,.gear-btn{border:1px solid var(--line-strong) !important;background:var(--paper) !important;color:var(--ink) !important;text-decoration:none !important;border-radius:4px;padding:4px 10px !important;font-size:12.5px;cursor:pointer;position:relative;}
-  .bell-btn{margin-left:auto;}
-  .bell-btn:hover,.gear-btn:hover{background:var(--paper-soft) !important;}
   .bell-badge{display:none;margin-left:6px;background:var(--danger);color:var(--on-color);border-radius:3px;min-width:18px;font-size:11px;line-height:17px;text-align:center;padding:0 4px;font-family:var(--font-mono);font-weight:600;}
   .bell-badge.show{display:inline-block;}
 
@@ -409,7 +408,7 @@
   .role-block{margin-bottom:4px;}
   .role-block h4{display:none;}
   .role-block .btn{width:100%;margin-top:8px;padding:10px 14px;}
-  .role-block .btn-ghost{border-color:transparent;color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px;font-weight:500;}
+  .role-block .btn-ghost{background:none;border-color:transparent;color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px;font-weight:500;}
   .role-block .btn-ghost:hover{background:none;color:var(--ink);}
   .role-block input[type=text],.role-block input[type=password]{width:100%;border:1px solid var(--line-strong);border-radius:6px;padding:10px 11px;font-size:14.5px;margin-bottom:8px;background:var(--paper);color:var(--ink);}
   #student-login-btn{background:var(--ink-solid);color:var(--on-solid);}
@@ -425,6 +424,103 @@
   #egg-overlay.show{display:flex;animation:egg-flash 900ms ease-out forwards;}
   #egg-overlay img{max-width:80%;max-height:80%;object-fit:contain;opacity:0.7;}
   @keyframes egg-flash{0%{opacity:0;}8%{opacity:1;}75%{opacity:1;}100%{opacity:0;}}
+
+  /* ================= 版面結構（app bar、底部分頁、每日列、送出列） ================= */
+  body{padding:0 0 calc(96px + env(safe-area-inset-bottom));font-variant-numeric:tabular-nums;}
+  .wrap{padding:0 16px;}
+  .header{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:6px;margin:0 -16px 14px;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));background:var(--paper);border-bottom:1px solid var(--line);}
+  .header-title{flex:1;min-width:0;}
+  .header h1{font-size:18px;font-weight:700;letter-spacing:0;line-height:1.2;}
+  .header p{margin:1px 0 0;font-size:11.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .icon-btn{position:relative;width:38px;height:38px;border-radius:50%;border:none;background:none;color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+  .icon-btn:hover{background:var(--paper-soft);}
+  .icon-btn svg{width:22px;height:22px;}
+  .icon-btn .bell-badge{position:absolute;top:3px;right:2px;margin:0;border-radius:9px;min-width:17px;line-height:17px;font-size:10.5px;padding:0 4px;}
+  .me-btn{width:34px;height:34px;border-radius:50%;border:none;background:var(--brand);color:#fff;font-weight:700;font-size:13px;cursor:pointer;flex-shrink:0;margin-left:2px;}
+  .me-menu{display:none;position:absolute;right:12px;top:calc(100% + 6px);min-width:220px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.14);padding:6px;z-index:40;}
+  .me-menu.show{display:block;}
+  .me-who{padding:10px 12px 8px;font-size:12.5px;color:var(--ink-soft);border-bottom:1px solid var(--line);margin-bottom:4px;}
+  .me-who b{display:block;color:var(--ink);font-size:15px;margin-top:2px;}
+  .me-menu button{display:block !important;width:100%;text-align:left;border:none;background:none;color:var(--ink);font-size:14.5px;padding:10px 12px;border-radius:8px;cursor:pointer;margin:0;text-decoration:none;}
+  .me-menu button:hover{background:var(--paper-soft);}
+  .me-menu #who-change-btn{color:var(--danger);}
+  .id-bar{display:none;}
+
+  #tab-bar{gap:0;border:none;}
+  #tab-bar .tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;}
+  #tab-bar .tab-btn svg{width:22px;height:22px;display:none;}
+  @media (max-width:700px){
+    #tab-bar{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;background:var(--paper);border-top:1px solid var(--line);padding:4px 0 calc(4px + env(safe-area-inset-bottom));}
+    #tab-bar .tab-btn{border:none;margin:0;padding:6px 0;font-size:11px;font-weight:600;color:var(--ink-soft);}
+    #tab-bar .tab-btn.active{color:var(--brand);border:none;}
+    #tab-bar .tab-btn svg{display:block;}
+  }
+  @media (min-width:701px){
+    #tab-bar{background:var(--line);border-radius:10px;padding:3px;margin-bottom:18px;}
+    #tab-bar .tab-btn{border:none;margin:0;padding:8px;border-radius:8px;font-size:14px;color:var(--ink);}
+    #tab-bar .tab-btn.active{background:var(--paper);box-shadow:0 1px 3px rgba(0,0,0,.1);}
+  }
+
+  /* 卡片：白卡、無框，靠灰底分隔 */
+  .date-card,.event-card,.add-bar{border:none;}
+  .meal-card{border:none;background:var(--paper-soft);border-radius:12px;}
+  .meal-card.lunch,.meal-card.dinner{border-top:none;}
+  .meal-title{font-size:15px;}
+  .date-num{font-size:18px;}
+  .event-head h3{font-size:17px;}
+  .btn,.add-name-row button,.choice-btn,.copy-last-btn,.week-picker-btn,.add-bar input,.add-name-row input,.note-input,.date-note-input{border-radius:10px;}
+  .btn-ghost,.copy-last-btn{border-color:transparent;background:var(--paper-soft);}
+  .add-name-row button{background:var(--paper-soft);color:var(--ink);border-color:transparent;}
+  .vendor-btn{border-radius:999px;}
+  .vendor-btn.active{background:var(--brand);border-color:var(--brand);color:#fff;}
+  .number-cell{border-radius:8px;}
+  .meal-view-toggle{border:none;background:var(--line);border-radius:10px;padding:3px;}
+  .meal-view-btn{border-radius:8px;background:transparent;color:var(--ink);font-size:14px;padding:9px;}
+  .meal-view-btn + .meal-view-btn{border-left:none;}
+  .meal-view-btn.active{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1);}
+  .week-picker-btn{border-color:transparent;}
+  .week-picker-rel{color:var(--brand);}
+  .meal-stat-line{border:none;background:var(--paper);border-radius:10px;padding:8px 12px;}
+  .overview{border:none;background:var(--paper);border-radius:var(--radius);padding:4px 16px;}
+  .outside-list{border:none;border-radius:12px;background:var(--paper);}
+  .qty-step-btn{border-radius:50%;}
+  .qty-step-btn.qty-step-plus{background:var(--brand);border-color:var(--brand);color:#fff;}
+  details.fold{margin-top:12px;border-top:1px solid var(--line);padding-top:4px;}
+  details.fold > summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:13.5px;font-weight:600;color:var(--ink);padding:8px 0;}
+  details.fold > summary::-webkit-details-marker{display:none;}
+  details.fold > summary::after{content:'';width:7px;height:7px;border-right:1.5px solid var(--ink-soft);border-bottom:1.5px solid var(--ink-soft);transform:rotate(45deg);margin-right:4px;}
+  details.fold[open] > summary::after{transform:rotate(-135deg);}
+  details.fold > summary .fold-count{margin-left:auto;margin-right:12px;color:var(--ink-soft);font-weight:500;}
+  details.fold .cancel-log-block{margin-top:0;padding-top:0;border-top:none;}
+
+  /* 同學：一天一張卡，午／晚各一列分段選擇 */
+  .student-day .date-head{padding:12px 16px 4px;}
+  .student-day .date-body{display:block;padding:0 16px 8px;}
+  .today-tag{font-size:11.5px;font-weight:700;color:#fff;background:var(--brand);border-radius:6px;padding:1px 7px;margin-left:4px;}
+  .meal-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);}
+  .meal-row:first-child{border-top:none;}
+  .meal-row-label{width:44px;flex-shrink:0;font-size:14px;font-weight:700;}
+  .meal-row-label small{display:block;font-size:11px;font-weight:500;color:var(--brand);}
+  .seg{flex:1;display:grid;grid-template-columns:repeat(4,1fr);background:var(--paper-soft);border-radius:10px;padding:3px;gap:3px;}
+  .seg button{border:none;background:none;border-radius:8px;padding:9px 0;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;}
+  .seg button.active.meat{background:var(--ink-solid);color:var(--on-solid);}
+  .seg button.active.veg{background:var(--mine);color:#fff;}
+  .seg button.active.cancel{background:var(--danger);color:#fff;}
+  .seg button.active.recur{background:var(--paper);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--ink);}
+  .meal-row-note{font-size:12px;color:var(--ink-soft);padding:0 0 8px 56px;margin-top:-4px;}
+
+  /* 底部固定的送出列（像外送 app 的購物車列） */
+  .submit-dock{position:fixed;left:12px;right:12px;bottom:calc(72px + env(safe-area-inset-bottom));z-index:25;max-width:756px;margin:0 auto;display:flex;align-items:center;gap:10px;background:var(--ink-solid);color:var(--on-solid);border-radius:14px;padding:10px 10px 10px 16px;box-shadow:0 10px 30px rgba(0,0,0,.2);}
+  .submit-dock .dock-text{flex:1;font-size:14px;font-weight:600;}
+  .submit-dock .dock-undo{border:none;background:none;color:inherit;opacity:.7;font-size:13.5px;cursor:pointer;padding:8px;}
+  .submit-dock .dock-go{border:none;background:var(--brand);color:#fff;font-weight:700;font-size:14.5px;border-radius:10px;padding:10px 18px;cursor:pointer;}
+  @media (min-width:701px){ .submit-dock{bottom:20px;} }
+  .event-card .submit-row + .fold{margin-top:4px;}
+  .event-card .submit-row{position:sticky;bottom:calc(72px + env(safe-area-inset-bottom));z-index:5;background:var(--paper);margin:10px -16px 0;padding:12px 16px;border-top:1px solid var(--line);}
+  @media (min-width:701px){ .event-card .submit-row{bottom:0;} }
+  .menu-item-name{display:flex;flex-direction:column;flex:1;min-width:0;}
+  .menu-item-name b{font-size:15px;font-weight:600;}
+  .menu-item-name span{font-size:12.5px;color:var(--ink-soft);}
 </style>
 </head>
 <body>
@@ -432,21 +528,21 @@
 <div class="wrap">
 
   <div class="header">
-    <div><h1>比南山更好</h1><p>退餐紀錄・外食訂購（思考是懷疑的泉源。)(我思故我在。)</p></div>
-    <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="切換深色／淺色模式" aria-label="切換深色／淺色模式">深色</button>
-  </div>
-
-  <div class="id-bar">
-    身份：<b id="who-label">尚未登入</b>
-    <button id="who-change-btn">登出 / 切換帳號</button>
-    <button class="tutorial-link-btn" id="tutorial-replay-btn" style="display:none;">新手教學</button>
-    <button class="bell-btn" id="bell-btn" title="退餐／以後不定通知" style="display:none;">通知<span class="bell-badge" id="bell-badge">0</span></button>
-    <button class="gear-btn" id="gear-btn" title="座號與伙委設定" style="display:none;">設定</button>
+    <div class="header-title"><h1>比南山更好</h1><p>思考是懷疑的泉源。我思故我在。</p></div>
+    <button type="button" class="icon-btn bell-btn" id="bell-btn" title="退餐／以後不定通知" aria-label="通知" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="bell-badge" id="bell-badge">0</span></button>
+    <button type="button" class="icon-btn gear-btn" id="gear-btn" title="座號與伙委設定" aria-label="設定" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    <button type="button" class="me-btn" id="me-btn" aria-label="帳號選單">？</button>
+    <div class="me-menu" id="me-menu">
+      <div class="me-who">目前登入<b id="who-label">尚未登入</b></div>
+      <button type="button" id="tutorial-replay-btn" style="display:none;">新手教學</button>
+      <button type="button" id="theme-toggle-btn">切換成深色</button>
+      <button type="button" id="who-change-btn">登出／切換帳號</button>
+    </div>
   </div>
 
   <div class="tab-bar" id="tab-bar" style="display:none;">
-    <button class="tab-btn active" id="tab-meal-btn" data-tab="meal">退餐紀錄</button>
-    <button class="tab-btn" id="tab-event-btn" data-tab="event">外食訂購</button>
+    <button class="tab-btn active" id="tab-meal-btn" data-tab="meal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>退餐紀錄</button>
+    <button class="tab-btn" id="tab-event-btn" data-tab="event"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>外食訂購</button>
   </div>
 
   <div id="content">
@@ -1300,9 +1396,11 @@ function applyRoleUI(){
   if(role==='staff') label = '伙委'+(staffName?'・'+staffName:'');
   else if(role==='student') label = (isCoordinatorActive()?'外食訂購人':'同學')+'・座號 '+studentId;
   document.getElementById('who-label').textContent = label;
-  document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-block' : 'none';
-  document.getElementById('bell-btn').style.display = role==='staff' ? 'inline-block' : 'none';
-  document.getElementById('tutorial-replay-btn').style.display = role ? 'inline-block' : 'none';
+  document.getElementById('me-btn').style.visibility = role ? 'visible' : 'hidden';
+  document.getElementById('me-btn').textContent = role==='student' ? studentId : (role==='staff' ? (staffName||'伙').slice(0,1) : '？');
+  document.getElementById('gear-btn').style.display = role==='staff' ? 'inline-flex' : 'none';
+  document.getElementById('bell-btn').style.display = role==='staff' ? 'inline-flex' : 'none';
+  document.getElementById('tutorial-replay-btn').style.display = role ? 'block' : 'none';
   document.getElementById('tab-bar').style.display = role ? 'flex' : 'none';
   updateBellBadge();
 }
@@ -1793,8 +1891,7 @@ function renderOrderStepperRows(eventId, label, menu){
     const totalQty=menuItemOrderedQty(eventId, mi.id);
     return `
     <div class="outside-row">
-      <span class="outside-name" style="width:auto;flex:1;">${escapeHtml(mi.name)}<span class="other-label" style="margin:0 0 0 6px;display:inline;">共${totalQty}份</span></span>
-      <span class="outside-currency">NT$${mi.price}</span>
+      <span class="menu-item-name"><b>${escapeHtml(mi.name)}</b><span>NT$${mi.price}・已訂 ${totalQty} 份</span></span>
       <div class="qty-stepper">
         <button type="button" class="qty-step-btn" data-action="order-qty-step" data-event="${eventId}" data-label="${label}" data-item="${mi.id}" data-delta="-1" ${qty<=0?'disabled':''} aria-label="減少${escapeHtml(mi.name)}數量">－</button>
         <span class="qty-step-val">${qty}</span>
@@ -2154,6 +2251,7 @@ function renderMealTab(){
   html += '<div class="week-group" data-week="'+wk+'">';
   ds.forEach(d=>{ html += role==='staff' ? renderStaffDateCard(d) : renderStudentDateCard(d); });
   html += '</div>';
+  if(role==='student') html += renderSubmitDock();
   content.innerHTML = html;
 }
 
@@ -2228,8 +2326,8 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
   // 互相蓋掉對方的資料。
   const actionableChoices=choiceList.filter(c=>c.status==='cancel' || c.status==='recur');
   const cancelCheckHtml = actionableChoices.length ? `
+    <details class="fold" open><summary>處理進度<span class="fold-count">${actionableChoices.filter(c=>c.processed).length}／${actionableChoices.length}</span></summary>
     <div class="cancel-log-block">
-      <div class="section-label">處理進度（勾選＝已跟廠商／本人確認，伙委共用）</div>
       <div class="cancel-check-list">
         ${actionableChoices.map(c=>`
         <label class="cancel-check-row ${c.processed?'done':''}">
@@ -2237,13 +2335,13 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
           <span>${escapeHtml(c.name||c.id)}<span class="cancel-check-tag ${c.status==='recur'?'recur':''}">${c.status==='cancel'?'退餐':'以後不定'}</span></span>
         </label>`).join('')}
       </div>
-    </div>` : '';
+    </div></details>` : '';
   const dayLogList = computeDayMealLog(date, meal);
   const dayLogHtml = `
+    <details class="fold"><summary>${label}紀錄<span class="fold-count">${dayLogList.length} 筆</span></summary>
     <div class="cancel-log-block">
-      <div class="section-label">${label}紀錄</div>
       ${dayLogList.length ? `<div class="notif-list">${dayLogList.map(renderDayLogRow).join('')}</div>` : `<div class="other-label">目前沒有任何紀錄</div>`}
-    </div>`;
+    </div></details>`;
   return `
   <div class="meal-card ${meal}${big?' lg':''}">
     <div class="meal-title"><span class="dot"></span>${label}<button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-prev-day-meal" data-date="${date}" data-meal="${meal}">跟前一天一樣</button><button type="button" class="copy-last-btn meal-copy-btn" data-action="copy-last-week-meal" data-date="${date}" data-meal="${meal}">套用上週同星期</button></div>
@@ -2265,12 +2363,12 @@ function renderStaffMealCard(date, meal, label, m, choiceList, big){
 function renderStudentDateCard(date){
   const e=entries[date]; const dObj=parseDate(date); const collapsed=collapsedDates.has(date);
   const lC=choiceArr(date,'lunch'), dC=choiceArr(date,'dinner');
-  const headRight = `<span class="chip-summary">午 ${mealSummaryText(lC)}</span><span class="chip-summary">晚 ${mealSummaryText(dC)}</span>`;
+  const isToday = date===todayStr();
   return `
-  <div class="date-card ${collapsed?'collapsed':''}" data-datecard="${date}">
+  <div class="date-card student-day ${collapsed?'collapsed':''}" data-datecard="${date}">
     <div class="date-head" data-action="toggle" data-date="${date}">
-      <div class="date-head-left"><span class="caret"></span><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span></div>
-      <div class="date-head-right">${headRight}</div>
+      <div class="date-head-left"><span class="date-num">${formatMD(dObj)}</span><span class="date-wd">週${WD[dObj.getDay()]}</span>${isToday?'<span class="today-tag">今天</span>':''}</div>
+      <span class="caret"></span>
     </div>
     <div class="date-body">
       ${renderStudentMealCard(date,'lunch','午餐',e.lunch||{},lC)}
@@ -2279,33 +2377,55 @@ function renderStudentDateCard(date){
   </div>`;
 }
 
+// 同學端：一餐一列，四個選項做成分段按鈕；按了只先暫存在本機，
+// 由畫面下方固定的送出列（renderSubmitDock）一次送出所有變更。
 function renderStudentMealCard(date, meal, label, m, choiceList){
   const mine=choiceList.find(c=>c.id===studentId);
   const savedStatus=mine?mine.status:'';
-  const key=date+'|'+meal;
-  const draft=draftChoice[key];
+  const draft=draftChoice[date+'|'+meal];
   const dirty=!!draft;
   const status=dirty?draft.status:savedStatus;
-  let statusLine;
-  if(dirty) statusLine='已選擇「'+(STATUS_LABEL[status]||'取消選擇')+'」，尚未送出（僅暫存於本機）';
-  else if(mine && mine._virtual) statusLine='固定不定餐：本次自動退餐（如需訂餐請直接選擇葷食／素食）';
-  else if(savedStatus) statusLine='已送出：'+(STATUS_LABEL[savedStatus]||'');
-  else statusLine='尚未選擇';
-
+  const opt=(st,txt)=>`<button type="button" class="${st} ${status===st?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="${st}">${txt}</button>`;
+  let note='';
+  if(!dirty && mine && mine._virtual) note='固定不定餐：這天自動退餐，要訂請直接選葷或素';
   return `
-  <div class="meal-card ${meal}">
-    <div class="meal-title"><span class="dot"></span>${label}</div>
-    <div class="choice-buttons">
-      <button type="button" class="choice-btn meat ${status==='meat'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="meat">葷食</button>
-      <button type="button" class="choice-btn veg ${status==='veg'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="veg">素食</button>
-      <button type="button" class="choice-btn cancel ${status==='cancel'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="cancel">退餐</button>
-      <button type="button" class="choice-btn recur ${status==='recur'?'active':''}" data-action="pick-status" data-date="${date}" data-meal="${meal}" data-status="recur" title="選這個代表這一餐先不決定；之後伙委開新的一週時，這一天會保持空白，需要你重新決定，不會自動延續成任何一種選擇">以後這天都不定</button>
-    </div>
-    <div class="submit-row ${dirty?'dirty':''}">
-      <span class="submit-status">${escapeHtml(statusLine)}</span>
-      <button type="button" class="btn btn-primary btn-submit-choice" data-action="submit-choice" data-date="${date}" data-meal="${meal}" ${dirty?'':'disabled'}>確定送出</button>
-    </div>
-  </div>`;
+  <div class="meal-row ${meal}">
+    <span class="meal-row-label">${label}${dirty?'<small>未送出</small>':''}</span>
+    <div class="seg">${opt('meat','葷')}${opt('veg','素')}${opt('cancel','退餐')}${opt('recur','不定')}</div>
+  </div>${note?`<div class="meal-row-note">${note}</div>`:''}`;
+}
+
+async function submitMyChoice(date, meal){
+  const key=date+'|'+meal;
+  const existing=choiceMap(date, meal)[studentId];
+  const existingReal = (existing && !existing._virtual) ? existing : null;
+  const savedStatus = existingReal ? existingReal.status : '';
+  const draft=draftChoice[key];
+  const status = draft ? draft.status : savedStatus;
+  const path=meal+'.choices.'+studentId;
+  if(!status){
+    await updateDoc(doc(db,'entries',date), { [path]: deleteField() });
+  } else {
+    // 記住「退餐前」的狀態（葷/素），之後伙委開新的一週時，會用這個欄位
+    // 幫這個人恢復成退餐前的選擇，而不是繼續延續退餐（見 copyMealBetweenDates）。
+    let prevStatus=null;
+    if(status==='cancel'){
+      const es=existingReal?existingReal.status:'';
+      if(es==='meat'||es==='veg') prevStatus=es;
+      else if(es==='cancel') prevStatus=(existingReal&&existingReal.prevStatus)||null;
+    }
+    await updateDoc(doc(db,'entries',date), { [path]: {
+      seatNo:studentId, studentId, name:studentId, status, prevStatus,
+      updatedBy:identity(), updatedAt:serverTimestamp()
+    }});
+  }
+  delete draftChoice[key];
+}
+
+function renderSubmitDock(){
+  const n=Object.keys(draftChoice).length;
+  if(!n) return '';
+  return `<div class="submit-dock"><span class="dock-text">${n} 項變更尚未送出</span><button type="button" class="dock-undo" data-action="discard-all-choices">復原</button><button type="button" class="dock-go" data-action="submit-all-choices">送出</button></div>`;
 }
 
 function renderEventTab(){
@@ -2322,7 +2442,7 @@ function renderEventTab(){
   const noteHtml = pendingRosterNote() + coordinatorNote();
 
   const totalAll = list.reduce((s,ev)=>s+eventTotal(ev),0);
-  const overviewHtml = `<div class="overview">
+  const overviewHtml = !manage ? '' : `<div class="overview">
     <div class="stat"><span class="num">NT$ ${totalAll}</span><span class="lab">進行中活動總金額</span></div>
     <div class="stat"><span class="num">${list.length}</span><span class="lab">進行中活動數</span></div>
   </div>`;
@@ -2372,8 +2492,9 @@ function renderRecommendSection(eventId, canDelete){
     </div>` : `<div class="other-label">目前還沒有人推薦餐廳</div>`;
 
   return `
-  <div class="rec-section">
-    <div class="section-label">餐廳推薦　<span class="other-label" style="display:inline;">每人最多兩家，同店會自動合併計票</span></div>
+  <details class="fold rec-section">
+    <summary>餐廳推薦<span class="fold-count">${recs.length} 家</span></summary>
+    <div class="other-label">每人最多兩家，同店會自動合併計票</div>
     <div class="rec-search-row">
       <button type="button" class="btn btn-outside" data-action="open-map-modal" data-event="${eventId}">開啟地圖選餐廳</button>
     </div>
@@ -2382,7 +2503,7 @@ function renderRecommendSection(eventId, canDelete){
       <button type="button" class="btn btn-outside" data-action="recommend-manual" data-event="${eventId}">直接推薦</button>
     </div>
     ${listHtml}
-  </div>`;
+  </details>`;
 }
 
 function renderStaffOrderRow(ev, o, menu, editable, removable){
@@ -2630,35 +2751,14 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     if(newStatus===savedStatus){ delete draftChoice[key]; } else { draftChoice[key] = {status:newStatus}; }
     render();
   }
-  else if(action==='submit-choice'){
-    const key=date+'|'+meal;
-    const existing=choiceMap(date, meal)[studentId];
-    const existingReal = (existing && !existing._virtual) ? existing : null;
-    const savedStatus = existingReal ? existingReal.status : '';
-    const draft=draftChoice[key];
-    const status = draft ? draft.status : savedStatus;
-    const path=meal+'.choices.'+studentId;
-    if(!status){
-      await updateDoc(doc(db,'entries',date), { [path]: deleteField() });
-      showToast('已送出：取消訂餐選擇');
-    } else {
-      // 記住「退餐前」的狀態（葷/素），之後伙委開新的一週時，會用這個欄位
-      // 幫這個人恢復成退餐前的選擇，而不是繼續延續退餐（見 copyMealBetweenDates）。
-      let prevStatus=null;
-      if(status==='cancel'){
-        const es=existingReal?existingReal.status:'';
-        if(es==='meat'||es==='veg') prevStatus=es;
-        else if(es==='cancel') prevStatus=(existingReal&&existingReal.prevStatus)||null;
-      }
-      await updateDoc(doc(db,'entries',date), { [path]: {
-        seatNo:studentId, studentId, name:studentId, status, prevStatus,
-        updatedBy:identity(), updatedAt:serverTimestamp()
-      }});
-      showToast('已送出：'+(STATUS_LABEL[status]||''));
-    }
-    delete draftChoice[key];
+  else if(action==='submit-choice'){ await submitMyChoice(date, meal); render(); }
+  else if(action==='submit-all-choices'){
+    const keys=Object.keys(draftChoice);
+    for(const k of keys){ const [d,m]=k.split('|'); await submitMyChoice(d, m); }
+    showToast('已送出 '+keys.length+' 項變更');
     render();
   }
+  else if(action==='discard-all-choices'){ draftChoice={}; render(); }
   else if(action==='delete-date'){ ev.stopPropagation(); await deleteDate(date); }
   else if(action==='delete-week'){ ev.stopPropagation(); await deleteWeek(el.dataset.week); }
   else if(action==='copy-prev-day-meal'){ ev.stopPropagation(); await applyPrevDayTo(date, meal); }
@@ -3043,14 +3143,23 @@ document.getElementById('tab-event-btn').addEventListener('click',()=>{
 // 沒存過就跟系統設定），這裡只需要把按鈕圖示同步成目前狀態、並處理點擊切換、
 // 記住使用者「主動選過」的偏好。只有使用者自己點過，才會寫進 localStorage；
 // 沒點過的話，畫面會一直跟著系統的淺色／深色設定走。
-const THEME_COLOR = { light:'#F3F0E9', dark:'#151412' };
+const THEME_COLOR = { light:'#FFFFFF', dark:'#1C1C1E' };
 function syncThemeUI(theme){
   const btn=document.getElementById('theme-toggle-btn');
-  if(btn){ btn.textContent = theme==='dark' ? '淺色' : '深色'; }
+  if(btn){ btn.textContent = theme==='dark' ? '切換成淺色' : '切換成深色'; }
   const meta=document.getElementById('theme-color-meta');
   if(meta){ meta.setAttribute('content', THEME_COLOR[theme] || THEME_COLOR.light); }
 }
 syncThemeUI(document.documentElement.getAttribute('data-theme') || 'light');
+// 右上角頭像：點開帳號選單（身份、新手教學、深淺色、登出），點選單外面或選單裡的按鈕就收起來。
+document.getElementById('me-btn').addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  document.getElementById('me-menu').classList.toggle('show');
+});
+document.addEventListener('click', (ev)=>{
+  const menu=document.getElementById('me-menu');
+  if(menu.classList.contains('show') && (!ev.target.closest('#me-menu') || ev.target.closest('button'))) menu.classList.remove('show');
+});
 document.getElementById('theme-toggle-btn').addEventListener('click', ()=>{
   const prev = document.documentElement.getAttribute('data-theme');
   const next = prev==='dark' ? 'light' : 'dark';
