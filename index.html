@@ -82,8 +82,6 @@
   .header{display:flex;align-items:flex-end;gap:14px;padding-bottom:14px;margin-bottom:10px;border-bottom:2px solid var(--ink);}
   .header h1{font-family:var(--font-head);font-weight:700;font-size:24px;letter-spacing:.02em;line-height:1.1;margin:0;}
   .header p{margin:6px 0 0;font-size:12px;color:var(--ink-soft);}
-  .theme-toggle-btn{flex-shrink:0;margin-left:auto;border:1px solid var(--line-strong);background:transparent;color:var(--ink);cursor:pointer;font-size:12px;padding:4px 10px;border-radius:4px;}
-  .theme-toggle-btn:hover{background:var(--paper-soft);}
 
   .id-bar{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--ink-soft);margin-bottom:18px;flex-wrap:wrap;}
   .id-bar b{color:var(--ink);font-weight:700;}
@@ -569,13 +567,13 @@
 
   <div class="header">
     <div class="header-title"><h1>比南山更好</h1><p>思考是懷疑的泉源。我思故我在。</p></div>
+    <button type="button" class="icon-btn" id="theme-toggle-btn" title="切換深色／淺色模式" aria-label="切換深色／淺色模式"></button>
     <button type="button" class="icon-btn bell-btn" id="bell-btn" title="退餐／以後不定通知" aria-label="通知" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="bell-badge" id="bell-badge">0</span></button>
     <button type="button" class="icon-btn gear-btn" id="gear-btn" title="座號與伙委設定" aria-label="設定" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     <button type="button" class="me-btn" id="me-btn" aria-label="帳號選單">？</button>
     <div class="me-menu" id="me-menu">
       <div class="me-who">目前登入<b id="who-label">尚未登入</b></div>
       <button type="button" id="tutorial-replay-btn" style="display:none;">新手教學</button>
-      <button type="button" id="theme-toggle-btn">切換成深色</button>
       <button type="button" id="who-change-btn">登出／切換帳號</button>
     </div>
   </div>
@@ -3186,7 +3184,10 @@ document.getElementById('tab-event-btn').addEventListener('click',()=>{
 const THEME_COLOR = { light:'#FFFFFF', dark:'#1D2026' };
 function syncThemeUI(theme){
   const btn=document.getElementById('theme-toggle-btn');
-  if(btn){ btn.textContent = theme==='dark' ? '切換成淺色' : '切換成深色'; }
+  // 深色時顯示太陽（點了切回淺色），淺色時顯示月亮（點了切成深色）。
+  const SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+  const MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  if(btn){ btn.innerHTML = theme==='dark' ? SUN : MOON; btn.title = theme==='dark' ? '切換成淺色' : '切換成深色'; }
   const meta=document.getElementById('theme-color-meta');
   if(meta){ meta.setAttribute('content', THEME_COLOR[theme] || THEME_COLOR.light); }
 }
