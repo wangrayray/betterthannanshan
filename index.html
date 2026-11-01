@@ -30,17 +30,18 @@
 </script>
 <style>
   /* 版面方向：參考 foodpanda、LINE、iOS 內建 app 這類每天在用的手機介面——
-     灰底白卡、系統字、一個品牌色（便當紅），手機上分頁放在底部、送出鈕固定在畫面下緣。
-     顏色只拿來表達狀態（葷／素／退餐／加訂…）。 */
+     灰底白卡、系統字，手機上分頁放在底部、送出鈕固定在畫面下緣。
+     配色只有黑、白、灰，加上一個紅色：紅色只留給「退餐」、通知數字和刪除這類要注意的東西。
+     狀態靠深淺和外框區分：葷＝黑底、素＝灰底、加訂＝粗黑框、不定＝虛線、退餐＝紅字刪除線。 */
   :root{
     color-scheme:light;
     --bg:#F2F2F5; --paper:#FFFFFF; --paper-soft:#F2F2F5;
     --ink:#1C1C1E; --ink-soft:#86868B; --ink-solid:#1C1C1E; --on-solid:#FFFFFF; --on-color:#FFFFFF; --line:#E6E6EA; --line-strong:#D2D2D7;
-    --brand:#E2492D; --brand-bg:#FDECE8;
-    --lunch:#E2492D; --lunch-bg:#FFFFFF;
-    --dinner:#3D5A99; --dinner-bg:#FFFFFF;
+    --brand:#1C1C1E; --brand-bg:#F2F2F5;
+    --lunch:#1C1C1E; --lunch-bg:#FFFFFF;
+    --dinner:#1C1C1E; --dinner-bg:#FFFFFF;
     --danger:#D93025; --danger-bg:#FCE9E7;
-    --mine:#2E9B57; --outside:#E2492D; --outside-bg:#FDECE8; --paid-bg:#EAF6EE;
+    --mine:#8E8E93; --outside:#1C1C1E; --outside-bg:#F2F2F5; --paid-bg:#F2F2F5;
     --radius:14px; --shadow:none;
     --font-sans:-apple-system,BlinkMacSystemFont,'PingFang TC','Noto Sans TC','Microsoft JhengHei',sans-serif;
     --font-head:var(--font-sans);
@@ -51,11 +52,11 @@
     color-scheme:dark;
     --bg:#000000; --paper:#1C1C1E; --paper-soft:#2C2C2E;
     --ink:#F2F2F7; --ink-soft:#98989F; --ink-solid:#F2F2F7; --on-solid:#1C1C1E; --on-color:#FFFFFF; --line:#2F2F33; --line-strong:#48484D;
-    --brand:#FF6A4D; --brand-bg:#3A1F19;
-    --lunch:#FF6A4D; --lunch-bg:#1C1C1E;
-    --dinner:#8FA8E0; --dinner-bg:#1C1C1E;
+    --brand:#F2F2F7; --brand-bg:#2C2C2E;
+    --lunch:#F2F2F7; --lunch-bg:#1C1C1E;
+    --dinner:#F2F2F7; --dinner-bg:#1C1C1E;
     --danger:#FF5A4E; --danger-bg:#3B1C1A;
-    --mine:#3FBF72; --outside:#FF6A4D; --outside-bg:#3A1F19; --paid-bg:#1B3024;
+    --mine:#636366; --outside:#F2F2F7; --outside-bg:#2C2C2E; --paid-bg:#2C2C2E;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -258,8 +259,8 @@
   .number-cell.veg{background:var(--mine);color:var(--on-color);}
   .number-cell.cancel{background:var(--danger-bg);color:var(--danger);border-color:var(--danger);text-decoration:line-through;}
   .number-cell.recur{background:var(--paper);color:var(--ink-soft);border:1px dashed var(--ink-soft);}
-  .number-cell.extra{background:var(--outside);color:var(--on-color);}
-  .number-cell.pending{outline:2px solid var(--outside);outline-offset:1px;}
+  .number-cell.extra{background:var(--paper);color:var(--ink);border:2px solid var(--ink);}
+  .number-cell.pending{outline:2px dashed var(--ink-soft);outline-offset:2px;}
   .pending-bar{margin:0 0 12px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--outside-bg);border-left:3px solid var(--outside);border-radius:0 4px 4px 0;font-size:13px;color:var(--ink);}
   .pending-bar b{font-size:13px;color:var(--outside);}
   .pending-bar .btn{padding:5px 12px;font-size:12.5px;}
@@ -436,7 +437,7 @@
   .icon-btn:hover{background:var(--paper-soft);}
   .icon-btn svg{width:22px;height:22px;}
   .icon-btn .bell-badge{position:absolute;top:3px;right:2px;margin:0;border-radius:9px;min-width:17px;line-height:17px;font-size:10.5px;padding:0 4px;}
-  .me-btn{width:34px;height:34px;border-radius:50%;border:none;background:var(--brand);color:#fff;font-weight:700;font-size:13px;cursor:pointer;flex-shrink:0;margin-left:2px;}
+  .me-btn{width:34px;height:34px;border-radius:50%;border:none;background:var(--brand);color:var(--on-solid);font-weight:700;font-size:13px;cursor:pointer;flex-shrink:0;margin-left:2px;}
   .me-menu{display:none;position:absolute;right:12px;top:calc(100% + 6px);min-width:220px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.14);padding:6px;z-index:40;}
   .me-menu.show{display:block;}
   .me-who{padding:10px 12px 8px;font-size:12.5px;color:var(--ink-soft);border-bottom:1px solid var(--line);margin-bottom:4px;}
@@ -472,7 +473,7 @@
   .btn-ghost,.copy-last-btn{border-color:transparent;background:var(--paper-soft);}
   .add-name-row button{background:var(--paper-soft);color:var(--ink);border-color:transparent;}
   .vendor-btn{border-radius:999px;}
-  .vendor-btn.active{background:var(--brand);border-color:var(--brand);color:#fff;}
+  .vendor-btn.active{background:var(--brand);border-color:var(--brand);color:var(--on-solid);}
   .number-cell{border-radius:8px;}
   .meal-view-toggle{border:none;background:var(--line);border-radius:10px;padding:3px;}
   .meal-view-btn{border-radius:8px;background:transparent;color:var(--ink);font-size:14px;padding:9px;}
@@ -484,7 +485,7 @@
   .overview{border:none;background:var(--paper);border-radius:var(--radius);padding:4px 16px;}
   .outside-list{border:none;border-radius:12px;background:var(--paper);}
   .qty-step-btn{border-radius:50%;}
-  .qty-step-btn.qty-step-plus{background:var(--brand);border-color:var(--brand);color:#fff;}
+  .qty-step-btn.qty-step-plus{background:var(--brand);border-color:var(--brand);color:var(--on-solid);}
   details.fold{margin-top:12px;border-top:1px solid var(--line);padding-top:4px;}
   details.fold > summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:13.5px;font-weight:600;color:var(--ink);padding:8px 0;}
   details.fold > summary::-webkit-details-marker{display:none;}
@@ -496,11 +497,11 @@
   /* 同學：一天一張卡，午／晚各一列分段選擇 */
   .student-day .date-head{padding:12px 16px 4px;}
   .student-day .date-body{display:block;padding:0 16px 8px;}
-  .today-tag{font-size:11.5px;font-weight:700;color:#fff;background:var(--brand);border-radius:6px;padding:1px 7px;margin-left:4px;}
+  .today-tag{font-size:11.5px;font-weight:700;color:var(--on-solid);background:var(--brand);border-radius:6px;padding:1px 7px;margin-left:4px;}
   .meal-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);}
   .meal-row:first-child{border-top:none;}
   .meal-row-label{width:44px;flex-shrink:0;font-size:14px;font-weight:700;}
-  .meal-row-label small{display:block;font-size:11px;font-weight:500;color:var(--brand);}
+  .meal-row-label small{display:block;font-size:11px;font-weight:500;color:var(--ink-soft);}
   .seg{flex:1;display:grid;grid-template-columns:repeat(4,1fr);background:var(--paper-soft);border-radius:10px;padding:3px;gap:3px;}
   .seg button{border:none;background:none;border-radius:8px;padding:9px 0;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;}
   .seg button.active.meat{background:var(--ink-solid);color:var(--on-solid);}
@@ -513,7 +514,7 @@
   .submit-dock{position:fixed;left:12px;right:12px;bottom:calc(72px + env(safe-area-inset-bottom));z-index:25;max-width:756px;margin:0 auto;display:flex;align-items:center;gap:10px;background:var(--ink-solid);color:var(--on-solid);border-radius:14px;padding:10px 10px 10px 16px;box-shadow:0 10px 30px rgba(0,0,0,.2);}
   .submit-dock .dock-text{flex:1;font-size:14px;font-weight:600;}
   .submit-dock .dock-undo{border:none;background:none;color:inherit;opacity:.7;font-size:13.5px;cursor:pointer;padding:8px;}
-  .submit-dock .dock-go{border:none;background:var(--brand);color:#fff;font-weight:700;font-size:14.5px;border-radius:10px;padding:10px 18px;cursor:pointer;}
+  .submit-dock .dock-go{border:none;background:var(--on-solid);color:var(--ink-solid);font-weight:700;font-size:14.5px;border-radius:10px;padding:10px 18px;cursor:pointer;}
   @media (min-width:701px){ .submit-dock{bottom:20px;} }
   .event-card .submit-row + .fold{margin-top:4px;}
   .event-card .submit-row{position:sticky;bottom:calc(72px + env(safe-area-inset-bottom));z-index:5;background:var(--paper);margin:10px -16px 0;padding:12px 16px;border-top:1px solid var(--line);}
