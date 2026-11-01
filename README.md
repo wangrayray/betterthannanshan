@@ -26,7 +26,7 @@ entries/{date}                每日訂餐紀錄
   lunch_choice/{seatNo}        （舊版子集合，已不再寫入，只保留給搬移工具讀取用）
   dinner_choice/{seatNo}       （舊版子集合，已不再寫入，只保留給搬移工具讀取用）
 events/{eventId}              外食訂購活動（deadline：訂購截止時間，毫秒時間戳，可不設）
-  └ menu/{itemId}              菜單品項（名稱、金額，由伙委/外食訂購人設定）
+  └ menu/{itemId}              菜單品項（名稱、金額、照片 photo，由伙委/外食訂購人設定）
   └ orders/{seatNo}            每人的訂購內容（品項＋數量，由同學自己選取）；paid＝已繳款、
                                pickedUp＝已取餐，兩個欄位各自獨立，只有伙委／外食訂購人能改
 ```
@@ -174,6 +174,13 @@ collection 建立 `onSnapshot` 常駐監聽，只要任何一個人寫入一筆�
 - 訂單寫入規則從 `{path=**}/orders` 拆成 `/events/{eventId}/orders/{sid}`（才拿得到 eventId），
   collectionGroup 讀取仍然保留在最外層。**這次 `firestore.rules` 有改，需要重新部署**
   （`firebase deploy --only firestore:rules`）。
+
+### 外食菜單照片
+
+伙委／外食訂購人可以替每個菜單品項加照片（新增品項時一起選，或之後點縮圖更換），同學點餐時會看到縮圖，點一下放大。
+免費方案的 Firebase 不能開 Storage，所以照片在瀏覽器裡先縮到長邊 640px、轉成 JPEG（約 100KB 以內），
+以 data URL 字串存在 `events/{eventId}/menu/{itemId}` 的 `photo` 欄位。不需要改安全規則；
+照片只會增加讀取的資料量，不會增加讀取次數。
 
 ### 每週訂餐店家（桶餐訂餐頁）
 
