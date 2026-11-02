@@ -54,7 +54,6 @@
     --font-sans:'Huninn',-apple-system,BlinkMacSystemFont,'PingFang TC','Noto Sans TC','Microsoft JhengHei',sans-serif;
     --font-head:var(--font-sans);
     --font-title:'BTNS Title',var(--font-sans);
-    --glass:rgba(255,255,255,.78); --glass-dark:rgba(38,42,51,.9);
     --font-mono:var(--font-sans);
   }
   /* 深色模式：同一組變數換深色。--ink-solid / --on-solid 是實心按鈕的底色與字色，深色下反過來。 */
@@ -67,7 +66,6 @@
     --dinner:#E3E6EC; --dinner-bg:#1D2026;
     --danger:#FF5A4E; --danger-bg:#3B1C1A;
     --mine:#565C68; --outside:#C3C8D1; --outside-bg:#272B33; --paid-bg:#272B33;
-    --glass:rgba(29,32,38,.78); --glass-dark:rgba(60,65,76,.92);
     --shadow:0 1px 2px rgba(0,0,0,.3);
   }
   *{box-sizing:border-box;}
@@ -271,7 +269,7 @@
   .number-cell.recur{background:var(--paper);color:var(--ink-soft);border:1px dashed var(--ink-soft);}
   .number-cell.extra{background:var(--paper);color:var(--ink);border:2px solid var(--ink);}
   .number-cell.pending{outline:2px dashed var(--ink-soft);outline-offset:2px;}
-  .pending-bar{margin:0 0 12px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--outside-bg);border-left:3px solid var(--outside);border-radius:0 4px 4px 0;font-size:14px;color:var(--ink);}
+  .pending-bar{margin:0 0 12px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--outside-bg);border-radius:10px;font-size:14px;color:var(--ink);}
   .pending-bar b{font-size:14px;color:var(--outside);}
   .pending-bar .btn{padding:5px 12px;font-size:14px;}
   .meal-stat-line{display:flex;gap:4px 18px;flex-wrap:wrap;font-size:14px;color:var(--ink-soft);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 0;margin:0 0 12px;}
@@ -434,7 +432,7 @@
 
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink-solid);color:var(--on-solid);padding:9px 16px;border-radius:6px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60;max-width:86vw;text-align:center;}
   .toast.show{opacity:1;}
-  .pending-note{font-size:14px;color:var(--danger);background:var(--danger-bg);border-left:3px solid var(--danger);border-radius:0 4px 4px 0;padding:8px 12px;margin-bottom:14px;}
+  .pending-note{font-size:14px;color:var(--danger);background:var(--danger-bg);border-radius:10px;padding:8px 12px;margin-bottom:14px;}
   #egg-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,0.55);backdrop-filter:blur(1px);cursor:pointer;}
   #egg-overlay.show{display:flex;animation:egg-flash 900ms ease-out forwards;}
   #egg-overlay img{max-width:80%;max-height:80%;object-fit:contain;opacity:0.7;}
@@ -544,15 +542,13 @@
   :root{--shadow:0 1px 2px rgba(22,28,45,.04),0 8px 24px rgba(22,28,45,.05); --radius:18px;}
   .header h1{font-family:var(--font-title);font-weight:700;font-size:20px;letter-spacing:.06em;}
   .date-num{font-family:var(--font-title);font-weight:700;letter-spacing:.02em;}
-  .header{background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom-color:transparent;box-shadow:0 1px 0 var(--line);}
-  @media (max-width:700px){ #tab-bar{background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);} }
   .date-card,.event-card,.add-bar,.overview{box-shadow:var(--shadow);margin-bottom:16px;}
   .section-label,.vendor-bar .section-label{letter-spacing:.08em;color:var(--ink-soft);}
   .seg{padding:4px;border-radius:12px;}
   .seg button{border-radius:9px;transition:background .15s,color .15s,box-shadow .15s;}
   .seg button.active.meat,.seg button.active.veg,.seg button.active.cancel{box-shadow:0 1px 2px rgba(0,0,0,.12);}
   .number-cell{border-radius:10px;}
-  .submit-dock{background:var(--glass-dark);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-radius:18px;}
+  .submit-dock{border-radius:18px;}
   .submit-dock .dock-go{border-radius:12px;}
   .me-btn{letter-spacing:0;}
   .today-tag{letter-spacing:.06em;}
@@ -589,6 +585,13 @@
   .photo-view{margin:auto;max-width:min(92vw,640px);text-align:center;}
   .photo-view img{max-width:100%;max-height:78vh;border-radius:14px;display:block;margin:0 auto;}
   .photo-view figcaption{color:#fff;font-size:16px;margin-top:10px;}
+
+  /* ================= 依 unslop-ui 檢查清單調整 =================
+     不用毛玻璃（改回不透明底色）、不做卡片套卡片（伙委那一餐直接排在日期卡片裡）、
+     不用「左邊色條＋圓角」的提示框。 */
+  .meal-card,.meal-card.lg{background:none;padding:0;border-radius:0;}
+  .meal-stat-line{background:none;border-radius:0;padding:4px 0 10px;border-bottom:1px solid var(--line);margin-bottom:12px;}
+  .header{background:var(--paper);}
 </style>
 </head>
 <body>
