@@ -592,6 +592,29 @@
   .meal-card,.meal-card.lg{background:none;padding:0;border-radius:0;}
   .meal-stat-line{background:none;border-radius:0;padding:4px 0 10px;border-bottom:1px solid var(--line);margin-bottom:12px;}
   .header{background:var(--paper);}
+
+  /* ================= 外食：每個人訂了什麼 ================= */
+  .order-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:18px 0 8px;}
+  .order-tally{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px;color:var(--ink-soft);margin:0 0 10px;}
+  .order-tally b{color:var(--ink);font-weight:700;}
+  .order-list{border-top:1px solid var(--line);margin-bottom:12px;}
+  .order-row{padding:12px 0;border-bottom:1px solid var(--line);}
+  .order-row.done .order-who,.order-row.done .order-items{color:var(--ink-soft);}
+  .order-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
+  .order-who{font-size:20px;font-weight:700;}
+  .order-sum{font-size:16px;color:var(--ink);}
+  .order-items{list-style:none;margin:4px 0 8px;padding:0;}
+  .order-items li{display:flex;justify-content:space-between;font-size:16px;line-height:1.7;}
+  .order-qty{color:var(--ink-soft);}
+  .order-edit{margin:6px 0 8px;}
+  .order-edit-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;}
+  .order-edit-row small{display:block;font-size:12px;color:var(--ink-soft);}
+  .order-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .order-chip{border:1px solid var(--line-strong);background:var(--paper);color:var(--ink-soft);border-radius:999px;padding:5px 12px;font-size:14px;cursor:pointer;}
+  .order-chip.on{background:var(--ink-solid);border-color:var(--ink-solid);color:var(--on-solid);}
+  .order-link{margin-left:auto;border:none;background:none;color:var(--ink-soft);font-size:14px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px 2px;}
+  .order-link + .order-link{margin-left:12px;}
+  .order-link.danger{color:var(--danger);}
 </style>
 </head>
 <body>
@@ -1850,6 +1873,7 @@ async function touchEvent(eventId){
 const MENU_PHOTO_MAX_SIDE = 640;
 const MENU_PHOTO_MAX_CHARS = 140000;
 let newMenuPhoto = {}; // eventId -> 新增品項時先選好、還沒建立的照片
+let editingOrderKey = ''; // 'eventId|orderId'：伙委目前展開 +/- 修改的那一筆訂單（一次只展開一筆）
 async function compressMenuPhoto(file){
   const url=URL.createObjectURL(file);
   try{
@@ -1897,6 +1921,8 @@ async function removeMenuItem(eventId, itemId){
   // 同上：menu 不是即時監聽，刪除後也要手動重抓一次才會馬上從畫面消失。
   await fetchEventMenu();
 }
+// 這筆訂單實際訂了幾份（全部品項加總），0 代表沒訂任何東西。
+function orderQty(order){ return Object.values((order&&order.items)||{}).reduce((s,q)=>s+(q>0?q:0),0); }
 function orderTotal(order, menu){
   return Object.entries(order.items||{}).reduce((s,[itemId,qty])=>{
     const mi=(menu||[]).find(m=>m.id===itemId);
@@ -2040,6 +2066,7 @@ async function setItemQty(eventId, label, itemId, val){
 }
 // 截止後伙委／外食訂購人替座號同學補登一份訂單（該同學當初沒下單）。
 async function addRosterOrder(eventId, label){
+  editingOrderKey=eventId+'|'+label;
   if((eventOrders[eventId]||[]).some(o=>o.id===label)){ showToast('座號 '+label+' 已經有訂單了'); return; }
   await setDoc(doc(db,'events',eventId,'orders',label), {
     studentId:label, name:label, paid:false, pickedUp:false, items:{},
@@ -2063,6 +2090,7 @@ async function removeParticipant(eventId, orderId){
 }
 async function addEventCustomName(eventId, name){
   const id='other__'+uid();
+  editingOrderKey=eventId+'|'+id;
   await setDoc(doc(db,'events',eventId,'orders',id), {studentId:name, name, items:{}, eventId, updatedBy:identity(), updatedAt:serverTimestamp()});
 }
 async function archiveEvent(id){
@@ -2620,35 +2648,40 @@ function renderRecommendSection(eventId, canDelete){
   </details>`;
 }
 
-function renderStaffOrderRow(ev, o, menu, editable, removable){
+// 伙委／外食訂購人看到的一筆訂單：誰、訂了什麼（只列有訂的品項）、金額，
+// 下面兩顆可以直接點的「繳款」「取餐」狀態鈕。可以修改的訂單按「修改」才展開 +/-，
+// 一次只展開一筆，平常畫面不會被一整排 0 份的品項塞滿。
+function renderStaffOrderRow(ev, o, menu, canEdit, removable){
   const sub=orderTotal(o, menu);
   const paid=!!o.paid, picked=!!o.pickedUp;
-  const pad = editable ? ' style="padding-top:4px;"' : '';
-  const checks = `<label class="paid-check" title="已繳款"${pad}><input type="checkbox" data-action="toggle-paid" data-event="${ev.id}" data-id="${o.id}" ${paid?'checked':''}><span class="check-lab">繳</span></label>`
-    + `<label class="paid-check" title="已取餐"${pad}><input type="checkbox" data-action="toggle-picked" data-event="${ev.id}" data-id="${o.id}" ${picked?'checked':''}><span class="check-lab">取</span></label>`;
-  const rowCls = 'outside-row'+(paid?' paid':'')+(picked?' picked':'');
-  if(!editable){
-    const itemList = menu.filter(mi=>(o.items&&o.items[mi.id])>0).map(mi=>escapeHtml(mi.name)+'×'+o.items[mi.id]).join('、') || '（尚未選擇品項）';
-    return `<div class="${rowCls}">${checks}<span class="outside-name">${escapeHtml(o.name||o.id)}</span><span style="flex:1;font-size:14px;color:var(--ink-soft);">${itemList}</span><span class="outside-currency">NT$${sub}</span></div>`;
-  }
-  const itemInputs = menu.map(mi=>`
-      <span class="qty-item">
-        <span class="qty-item-name">${escapeHtml(mi.name)}</span>
-        ${renderStaffQtyStepper(ev.id, o.id, mi.id, (o.items&&o.items[mi.id])||0)}
-      </span>`).join('');
+  const key=ev.id+'|'+o.id;
+  const editing = canEdit && editingOrderKey===key;
+  const ordered = menu.filter(mi=>(o.items&&o.items[mi.id])>0);
+  const itemsHtml = editing
+    ? `<div class="order-edit">${menu.map(mi=>`
+        <div class="order-edit-row"><span>${escapeHtml(mi.name)}<small>NT$${mi.price}</small></span>${renderStaffQtyStepper(ev.id, o.id, mi.id, (o.items&&o.items[mi.id])||0)}</div>`).join('') || '<div class="other-label">尚未新增菜單選項</div>'}</div>`
+    : `<ul class="order-items">${ordered.map(mi=>`<li><span>${escapeHtml(mi.name)}</span><span class="order-qty">× ${o.items[mi.id]}</span></li>`).join('')}</ul>`;
   return `
-    <div class="${rowCls}" style="align-items:flex-start;flex-wrap:wrap;">
-      ${checks}
-      <span class="outside-name"${pad}>${escapeHtml(o.name||o.id)}</span>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;">${itemInputs || '<span class="other-label">尚未新增菜單選項</span>'}</div>
-      <span class="outside-currency"${pad}>NT$${sub}</span>
-      ${removable?`<button class="outside-remove" data-action="remove-participant" data-event="${ev.id}" data-id="${o.id}">×</button>`:''}
+    <div class="order-row${paid&&picked?' done':''}">
+      <div class="order-head">
+        <span class="order-who">${escapeHtml(o.name||o.id)}</span>
+        <span class="order-sum">NT$${sub}</span>
+      </div>
+      ${itemsHtml}
+      <div class="order-actions">
+        <button type="button" class="order-chip ${paid?'on':''}" data-action="toggle-paid-btn" data-event="${ev.id}" data-id="${o.id}" aria-pressed="${paid}">${paid?'已繳款':'未繳款'}</button>
+        <button type="button" class="order-chip ${picked?'on':''}" data-action="toggle-picked-btn" data-event="${ev.id}" data-id="${o.id}" aria-pressed="${picked}">${picked?'已取餐':'未取餐'}</button>
+        ${canEdit?`<button type="button" class="order-link" data-action="edit-order" data-event="${ev.id}" data-id="${o.id}">${editing?'完成':'修改'}</button>`:''}
+        ${removable?`<button type="button" class="order-link danger" data-action="remove-participant" data-event="${ev.id}" data-id="${o.id}">刪除</button>`:''}
+      </div>
     </div>`;
 }
 
 function renderStaffEventCard(ev){
   const menu = eventMenu[ev.id]||[];
-  const orders = eventOrders[ev.id]||[];
+  // 只算真的有訂東西的人；沒訂任何品項的（例如加了名字還沒選、或同學把數量全改回 0）不列出、不計入。
+  // 正在修改的那一筆例外，不然剛新增的訂購人還沒選品項就會消失。
+  const orders = (eventOrders[ev.id]||[]).filter(o=>orderQty(o)>0 || editingOrderKey===ev.id+'|'+o.id);
   const roster=rosterLabels();
   const total=eventTotal(ev);
   const paidOrders = orders.filter(o=>o.paid);
@@ -2682,8 +2715,11 @@ function renderStaffEventCard(ev){
   // 繳款與取餐是兩個各自獨立的勾選框。截止前座號同學的品項只有本人能改（避免
   // 伙委代填蓋掉本人剛送出的資料）；截止後本人不能再改，伙委／外食訂購人才
   // 在這裡用 +/- 直接修改。
-  const rosterRows = rosterOrders.map(o=>renderStaffOrderRow(ev, o, menu, closed, false)).join('');
-  const customRows = customOrders.map(o=>renderStaffOrderRow(ev, o, menu, true, true)).join('');
+  // 座號依名冊順序排，非座號的訂購人排在後面。
+  rosterOrders.sort((a,b)=>roster.indexOf(a.id)-roster.indexOf(b.id));
+  const orderRows = rosterOrders.map(o=>renderStaffOrderRow(ev, o, menu, closed, false)).join('')
+                  + customOrders.map(o=>renderStaffOrderRow(ev, o, menu, true, true)).join('');
+  const itemTotals = menu.map(mi=>[mi, orders.reduce((s,o)=>s+((o.items&&o.items[mi.id])||0),0)]).filter(([,q])=>q>0);
   const dl = eventDeadlineMs(ev);
   const deadlineHtml = `
       <div class="section-label" title="截止後一般同學只能看到自己訂了什麼與是否取餐，不能再修改">訂購截止</div>
@@ -2721,13 +2757,14 @@ function renderStaffEventCard(ev){
       ` : `<div class="other-label">尚未新增菜單選項，請先在上方新增後再回來選購</div>`}
       ` : ''}
 
-      <div class="section-label" style="margin-top:12px;">座號訂單　<span class="other-label" style="display:inline;">${closed?'已截止，可直接修改品項・':'截止前由本人選取・'}繳＝已繳款，取＝已取餐</span></div>
-      ${rosterOrders.length ? `<div class="outside-list">${rosterRows}</div>` : `<div class="other-label">目前還沒有同學下單</div>`}
+      <div class="order-section-head">
+        <span class="section-label" style="margin:0;">訂單（${orders.length} 人）</span>
+        <span class="other-label" style="margin:0;">${closed?'已截止，可按「修改」調整品項':'截止前由本人選取'}</span>
+      </div>
+      ${itemTotals.length?`<div class="order-tally">${itemTotals.map(([mi,q])=>`<span>${escapeHtml(mi.name)} <b>${q}</b></span>`).join('')}</div>`:''}
+      ${orders.length ? `<div class="order-list">${orderRows}</div>` : `<div class="other-label">目前還沒有人訂購</div>`}
       ${addRosterHtml}
-
-      <div class="section-label" style="margin-top:12px;">其他訂購人（非座號）</div>
-      ${customOrders.length ? `<div class="outside-list">${customRows}</div>` : ''}
-      <div class="add-name-row"><input type="text" placeholder="不在座號表？輸入姓名後 Enter" data-action="event-name-input" data-event="${ev.id}"><button data-action="add-event-name" data-event="${ev.id}">新增</button></div>
+      <div class="add-name-row"><input type="text" placeholder="不在座號表的訂購人：輸入姓名後 Enter" data-action="event-name-input" data-event="${ev.id}"><button data-action="add-event-name" data-event="${ev.id}">新增</button></div>
       <div class="outside-total">共 ${orders.length} 人・總金額 NT$ ${total}・<span class="paid-tag">已繳款 ${paidCount} 人（NT$ ${paidTotal}）</span>${unpaidCount?`・尚未繳款 ${unpaidCount} 人`:''}・已取餐 ${pickedCount} 人${orders.length-pickedCount?`・尚未取餐 ${orders.length-pickedCount} 人`:''}</div>
 
       ${renderRecommendSection(ev.id, true)}
@@ -2767,7 +2804,7 @@ function renderStudentEventCard(ev){
   <div class="event-card">
     ${head}
     <div class="event-body">
-      <div class="section-label">目前已有 <b>${orders.length}</b> 人參加・總金額 <b>NT$ ${total}</b></div>
+      <div class="section-label">目前已有 <b>${orders.filter(o=>orderQty(o)>0).length}</b> 人參加・總金額 <b>NT$ ${total}</b></div>
       ${menu.length ? `
         <div class="section-label" style="margin-top:8px;">選擇品項</div>
         <div class="outside-list">${renderOrderStepperRows(ev.id, studentId, menu)}</div>
@@ -2927,6 +2964,18 @@ document.getElementById('content').addEventListener('click', async (ev)=>{
     document.getElementById('photo-view-bg').classList.add('show');
   }
   else if(action==='remove-menu-item'){ await removeMenuItem(eventId, el.dataset.item); }
+  else if(action==='edit-order'){
+    const key=eventId+'|'+el.dataset.id;
+    editingOrderKey = editingOrderKey===key ? '' : key;
+    render();
+  }
+  else if(action==='toggle-paid-btn' || action==='toggle-picked-btn'){
+    const o=(eventOrders[eventId]||[]).find(x=>x.id===el.dataset.id); if(!o) return;
+    const upd = action==='toggle-paid-btn'
+      ? {paid:!o.paid, paidBy:identity(), paidAt:new Date().toISOString()}
+      : {pickedUp:!o.pickedUp, pickedUpBy:identity(), pickedUpAt:new Date().toISOString()};
+    await updateDoc(doc(db,'events',eventId,'orders',el.dataset.id), Object.assign(upd, {updatedAt:serverTimestamp()}));
+  }
   else if(action==='remove-participant'){ await removeParticipant(eventId, el.dataset.id); }
   else if(action==='order-qty-step'){
     // 自己下單（同學／外食訂購人）用的 +/- 按鈕：只改本機暫存，不會馬上
